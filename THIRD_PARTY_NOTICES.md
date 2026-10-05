@@ -1,5 +1,21 @@
 # Third-Party Notices
 
+## cbmbasic
+
+The BASIC application uses the translated native-C core from
+[mist64/cbmbasic](https://github.com/mist64/cbmbasic), pinned to
+`3b9e48d370241deded3bc3341ef7c8fc319bbb1f`.
+
+Copyright (c) 2009 Michael Steil, James Abbatiello.
+
+The exact redistribution notice and disclaimer are in
+[apps/basic/LICENSE](apps/basic/LICENSE), with source hashes, local patches and
+ROM-derived/static-translation qualifications in
+[apps/basic/UPSTREAM.md](apps/basic/UPSTREAM.md). Both files are installed under
+`T:/share/licenses/basic/` and must accompany binary distributions. This
+integration is not legal clearance of underlying Commodore/Microsoft-derived
+material.
+
 ## mini-rv32ima
 
 TabOS host RV32 execution uses `mini-rv32ima`, pinned to commit
