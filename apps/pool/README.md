@@ -11,7 +11,9 @@ preview with arrows/WASD and press **Enter** to confirm a gold valid position.
 The computer handles its own shots and placement.
 R asks for a fresh rack; Enter confirms, R/Escape cancels. Enter also starts a
 new rack after a result. P pauses; H opens help and freezes play; M toggles sound.
-Q exits. Escape closes help or confirmation first, otherwise exits.
+Q exits. Escape closes help or confirmation first, otherwise exits. Launch with
+`pool --profile` to print aggregate simulation, rendering and presentation timing
+after quitting; it can be combined with `--two-player`.
 
 Build from the repository root with `./apps/build.sh`, or with the RISC-V
 toolchain active, `make -C apps/pool`. See [the guide](../../docs/pool.md) for

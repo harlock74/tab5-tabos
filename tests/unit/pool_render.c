@@ -9,6 +9,7 @@
 #include <string.h>
 
 static unsigned int presents;
+static unsigned int clears;
 static int present_result;
 
 static int open_graphics(uint32_t* width, uint32_t* height)
@@ -29,11 +30,18 @@ static int present(void)
     return present_result;
 }
 
+static int clear(uint32_t color)
+{
+    assert(color == 0U);
+    ++clears;
+    return 0;
+}
+
 static int blit(const tabos_graphics_blit_options_t* options)
 {
-    assert(options->bitmap_width == 640U && options->bitmap_height == 360U);
-    assert(options->destination.x == 0 && options->destination.y == 0);
-    assert(options->destination.width == 1280U && options->destination.height == 720U);
+    assert(options->bitmap_width == 639U && options->bitmap_height == 360U);
+    assert(options->destination.x == 1 && options->destination.y == 0);
+    assert(options->destination.width == 1278U && options->destination.height == 720U);
     assert(options->pixels != NULL);
     return 0;
 }
@@ -42,6 +50,7 @@ static const tabos_elf_api_t api = {
     .abi_version      = TABOS_ELF_API_VERSION,
     .graphics_open    = open_graphics,
     .graphics_close   = close_graphics,
+    .graphics_clear   = clear,
     .graphics_present = present,
     .graphics_blit_ex = blit,
 };
@@ -63,8 +72,8 @@ static void capture(const tabos_graphics_t* graphics, const char* suffix)
     (void) snprintf(path, sizeof(path), "%s-%s.ppm", prefix, suffix);
     FILE* file = fopen(path, "wb");
     assert(file != NULL);
-    fprintf(file, "P6\n640 360\n255\n");
-    for (unsigned int i = 0U; i < 640U * 360U; ++i) {
+    fprintf(file, "P6\n%u %u\n255\n", POOL_CANVAS_WIDTH, POOL_CANVAS_HEIGHT);
+    for (unsigned int i = 0U; i < POOL_CANVAS_WIDTH * POOL_CANVAS_HEIGHT; ++i) {
         const uint16_t p          = graphics->pixels[i];
         const unsigned char rgb[] = {(unsigned char) (((p >> 11U) & 31U) * 255U / 31U),
                                      (unsigned char) (((p >> 5U) & 63U) * 255U / 63U),
@@ -81,7 +90,7 @@ int main(void)
     pool_game_reset(&game);
     assert(tabos_graphics_open(&graphics) == 0);
     assert(graphics.scale == 2U);
-    assert(pool_render(&graphics, &game) == 0 && presents == 1U);
+    assert(pool_render(&graphics, &game) == 0 && presents == 1U && clears == 1U);
     assert(pixel(&graphics, 100, 101) == TABOS_RGB565(23, 112, 88));
     assert(pixel(&graphics, 100, 44) == TABOS_RGB565(17, 78, 64));
     for (unsigned int i = 0U; i < POOL_POCKET_COUNT; ++i) {
@@ -182,6 +191,18 @@ int main(void)
     capture(&graphics, "result");
     /* Reserved upper-right OS overlay region stays clear. */
     assert(pixel(&graphics, 630, 10) == TABOS_RGB565(13, 23, 29));
+    pool_game_reset(&game);
+    game.potted                    = UINT16_C(0xfffe);
+    game.shot_set                  = true;
+    pool_game_t previous           = game;
+    previous.balls[0].position     = (pool_vec_t) {100 * POOL_ONE, 100 * POOL_ONE};
+    game.balls[0].position         = (pool_vec_t) {120 * POOL_ONE, 100 * POOL_ONE};
+    const unsigned int before_draw = presents;
+    assert(pool_render_draw(&graphics, &game, &previous, 500U) == 0);
+    assert(presents == before_draw);
+    assert(pixel(&graphics, POOL_TABLE_X + 110, POOL_TABLE_Y + 100) == TABOS_RGB565(246, 242, 218));
+    assert(pixel(&graphics, POOL_TABLE_X + 120, POOL_TABLE_Y + 100) != TABOS_RGB565(246, 242, 218));
+    assert(pool_render_draw(&graphics, &game, &previous, 1000U) == -1 && errno == EINVAL);
     present_result = -EIO;
     assert(pool_render(&graphics, &game) == -1 && errno == EIO);
     assert(tabos_graphics_close(&graphics) == 0);

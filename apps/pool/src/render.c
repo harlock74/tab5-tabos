@@ -379,12 +379,29 @@ static void dialogs(painter_t* painter, const pool_game_t* game)
     }
 }
 
-int pool_render(tabos_graphics_t* graphics, const pool_game_t* game)
+static int32_t interpolate(int32_t previous, int32_t current, uint32_t fraction)
+{
+    return previous + (int32_t) (((int64_t) current - previous) * fraction / 1000);
+}
+
+int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const pool_game_t* previous,
+                     uint32_t interpolation)
 {
     if (game == NULL || graphics == NULL || graphics->width != POOL_CANVAS_WIDTH ||
-        graphics->height != POOL_CANVAS_HEIGHT) {
+        graphics->height != POOL_CANVAS_HEIGHT || interpolation >= 1000U) {
         errno = EINVAL;
         return -1;
+    }
+    pool_game_t frame;
+    if (previous != NULL && previous->shot_set && game->shot_set) {
+        frame = *game;
+        for (unsigned int i = 0U; i < POOL_BALL_COUNT; ++i) {
+            frame.balls[i].position.x =
+                interpolate(previous->balls[i].position.x, game->balls[i].position.x, interpolation);
+            frame.balls[i].position.y =
+                interpolate(previous->balls[i].position.y, game->balls[i].position.y, interpolation);
+        }
+        game = &frame;
     }
     painter_t painter = {.graphics = graphics, .error = tabos_graphics_clear(graphics, BACKGROUND)};
     table(&painter);
@@ -524,6 +541,14 @@ int pool_render(tabos_graphics_t* graphics, const pool_game_t* game)
     text(&painter, 610, 302, game->muted ? "OFF" : "ON", 1, MUTED);
     dialogs(&painter, game);
     if (painter.error != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int pool_render(tabos_graphics_t* graphics, const pool_game_t* game)
+{
+    if (pool_render_draw(graphics, game, NULL, 0U) != 0) {
         return -1;
     }
     return tabos_graphics_present(graphics);

@@ -3,6 +3,7 @@
 #include <pool/clock.h>
 #include <pool/ai.h>
 #include <pool/sound.h>
+#include <inttypes.h>
 #include <string.h>
 #include <tabos/runtime_time.h>
 
@@ -27,10 +28,21 @@ static bool sound_enabled(const pool_game_t* game)
 
 int main(int argc, char** argv)
 {
-    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--two-player") != 0)) {
-        fprintf(stderr, "usage: pool [--two-player]\n");
-        return 1;
+    bool two_player = false;
+    bool profiling  = false;
+    for (int argument = 1; argument < argc; ++argument) {
+        if (strcmp(argv[argument], "--two-player") == 0 && !two_player) {
+            two_player = true;
+        } else if (strcmp(argv[argument], "--profile") == 0 && !profiling) {
+            profiling = true;
+        } else {
+            fprintf(stderr, "usage: pool [--two-player] [--profile]\n");
+            return 1;
+        }
     }
+    uint64_t active_ms = 0U, frames = 0U, ticks_total = 0U;
+    uint64_t simulation_ms = 0U, render_ms = 0U, present_ms = 0U;
+    uint64_t max_simulation_ms = 0U, max_render_ms = 0U, max_present_ms = 0U;
     uint32_t tty = 0U;
     if (ioctl(STDIN_FILENO, TABOS_TTY_GET_MODE, &tty) != 0 ||
         ioctl(STDIN_FILENO, TABOS_TTY_SET_MODE, tty | (uint32_t) TABOS_TTY_MODE_RAW_INPUT) != 0) {
@@ -46,7 +58,7 @@ int main(int argc, char** argv)
     int status              = input.source == TABOS_WAIT_SOURCE_INVALID ? 1 : 0;
     pool_game_t game;
     pool_game_reset(&game);
-    game.computer      = argc == 1;
+    game.computer      = !two_player;
     game.title         = true;
     pool_sound_t sound = {.stream = TABOS_AUDIO_STREAM_INVALID};
     pool_ai_t ai;
@@ -100,15 +112,30 @@ int main(int argc, char** argv)
         const uint64_t elapsed = now - previous;
         previous               = now;
         const bool is_active   = active(&game, &controls);
+        if (profiling && is_active && was_active && !transition) {
+            active_ms += elapsed;
+        }
+        pool_game_t previous_motion;
+        bool interpolate_motion  = false;
+        unsigned int frame_ticks = 0U;
         if (is_active && was_active && !transition) {
-            const unsigned int ticks = pool_clock_advance(&clock, elapsed);
-            for (unsigned int i = 0U; i < ticks; ++i) {
+            frame_ticks               = pool_clock_advance(&clock, elapsed);
+            uint64_t simulation_start = 0U;
+            if (profiling) {
+                simulation_start = tabos_monotonic_ms();
+            }
+            for (unsigned int i = 0U; i < frame_ticks; ++i) {
                 const pool_game_t before = game;
                 dirty                    = pool_game_effects_step(&game) || dirty;
                 dirty                    = pool_input_step(&controls, &game) || dirty;
                 if (game.shot_set) {
                     pool_ai_reset(&ai, ai.seed);
-                    dirty = pool_game_step(&game) || dirty;
+                    const bool changed = pool_game_step(&game);
+                    if (changed) {
+                        previous_motion    = before;
+                        interpolate_motion = true;
+                    }
+                    dirty = changed || dirty;
                 } else if (pool_game_computer_turn(&game)) {
                     controls.blocked = controls.held;
                     dirty            = pool_ai_step(&ai, &game) || dirty;
@@ -118,6 +145,14 @@ int main(int argc, char** argv)
                     effect = next;
                 }
             }
+            if (profiling) {
+                const uint64_t duration  = tabos_monotonic_ms() - simulation_start;
+                ticks_total             += frame_ticks;
+                simulation_ms           += duration;
+                if (duration > max_simulation_ms) {
+                    max_simulation_ms = duration;
+                }
+            }
         } else {
             /* Never apply idle/pre-transition time to new controls or motion. */
             clock.accumulator = 0U;
@@ -125,9 +160,37 @@ int main(int argc, char** argv)
         if (sound_enabled(&game)) {
             pool_sound_play(&sound, effect);
         }
-        if (dirty && pool_render(&graphics, &game) != 0) {
-            status = 1;
-            break;
+        if (dirty) {
+            const pool_game_t* motion = interpolate_motion ? &previous_motion : NULL;
+            uint64_t render_start     = 0U;
+            if (profiling) {
+                render_start = tabos_monotonic_ms();
+            }
+            if (pool_render_draw(&graphics, &game, motion, clock.accumulator) != 0) {
+                status = 1;
+                break;
+            }
+            const uint64_t render_duration = profiling ? tabos_monotonic_ms() - render_start : 0U;
+            uint64_t present_start         = 0U;
+            if (profiling) {
+                present_start = tabos_monotonic_ms();
+            }
+            if (tabos_graphics_present(&graphics) != 0) {
+                status = 1;
+                break;
+            }
+            const uint64_t present_duration = profiling ? tabos_monotonic_ms() - present_start : 0U;
+            if (profiling && is_active) {
+                ++frames;
+                render_ms  += render_duration;
+                present_ms += present_duration;
+                if (render_duration > max_render_ms) {
+                    max_render_ms = render_duration;
+                }
+                if (present_duration > max_present_ms) {
+                    max_present_ms = present_duration;
+                }
+            }
         }
         dirty            = false;
         uint32_t timeout = TABOS_WAIT_TIMEOUT_INFINITE;
@@ -147,6 +210,16 @@ int main(int argc, char** argv)
     }
     if (status != 0) {
         fprintf(stderr, "pool: graphics or input service failed\n");
+    }
+    if (profiling) {
+        printf("Pool profile (active play and animation):\n"
+               "  elapsed: %" PRIu64 " ms; frames: %" PRIu64 "; ticks: %" PRIu64 "\n"
+               "  simulation: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
+               "  render: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
+               "  present: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
+               "  catch-up discarded: %" PRIu64 " ms\n",
+               active_ms, frames, ticks_total, simulation_ms, max_simulation_ms, render_ms, max_render_ms, present_ms,
+               max_present_ms, clock.discarded_ms);
     }
     return status;
 }
