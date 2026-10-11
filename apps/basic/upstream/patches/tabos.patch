@@ -1,0 +1,213 @@
+--- a/cbmbasic.c
++++ b/cbmbasic.c
+@@ -24,6 +24,12 @@
+  * SUCH DAMAGE.
+  */
+ 
++/* TabOS portable hooks; see upstream/patches/tabos.patch. */
++extern void basic_unsupported(void);
++extern void basic_c64_close(void);
++extern _Bool basic_c64_read(unsigned short address, unsigned char *value);
++extern _Bool basic_c64_write(unsigned short address, unsigned char value);
++
+ /* Provide Declarations */
+ #include <stdarg.h>
+ #include <setjmp.h>
+@@ -131,9 +137,11 @@
+ double fmod(double, double);
+ float fmodf(float, float);
+ long double fmodl(long double, long double);
+-int main(int llvm_cbe_argc, char **llvm_cbe_argv);
++int basic_core_main(int llvm_cbe_argc, char **llvm_cbe_argv);
+ int init_os(int , char **);
+ unsigned int kernal_dispatch(void);
++#include <basic/extensions.h>
++#include <basic/graphics.h>
+ 
+ 
+ /* Global Variable Declarations */
+@@ -186,7 +194,7 @@
+ static inline int llvm_fcmp_ole(double X, double Y) { return X <= Y ; }
+ static inline int llvm_fcmp_oge(double X, double Y) { return X >= Y ; }
+ 
+-int main(int llvm_cbe_argc, char **llvm_cbe_argv) {
++int basic_core_main(int llvm_cbe_argc, char **llvm_cbe_argv) {
+   unsigned char llvm_cbe_ROM[17591];    /* Address-exposed local */
+   unsigned char *llvm_cbe_ROM499;
+   unsigned char *ltmp_0_1;
+@@ -9368,6 +9376,12 @@
+   }
+ 
+ llvm_cbe_lA82F:
++  if (C != 0U && Z != 0U) {
++    basic_extension_reset();
++    basic_c64_close();
++    basic_graphics_close();
++    basic_sound_close();
++  }
+   llvm_cbe_tmp9011 = *(&C);
+   if (llvm_cbe_tmp9011 == ((unsigned char )0)) {
+     goto llvm_cbe_lA831;
+@@ -11045,6 +11059,8 @@
+   goto llvm_cbe_lB7EB;
+ 
+ llvm_cbe_lB82D:
++  basic_unsupported();
++  goto llvm_cbe_lB248;
+   llvm_cbe_tmp32356 = *(&S);
+   *((&RAM[((signed int )((((unsigned int )(unsigned char )llvm_cbe_tmp32356)) | 256u))])) = ((unsigned char )-72);
+   llvm_cbe_tmp32360 = ((unsigned char )(llvm_cbe_tmp32356 + ((unsigned char )-1)));
+@@ -11054,6 +11070,8 @@
+   goto llvm_cbe_lB7EB;
+ 
+ llvm_cbe_lE12A:
++  basic_unsupported();
++  goto llvm_cbe_lB248;
+   llvm_cbe_tmp44970 = *(&S);
+   *((&RAM[((signed int )((((unsigned int )(unsigned char )llvm_cbe_tmp44970)) | 256u))])) = ((unsigned char )-31);
+   *((&RAM[((signed int )((((unsigned int )(unsigned char )(((unsigned char )(llvm_cbe_tmp44970 + ((unsigned char )-1)))))) | 256u))])) = ((unsigned char )44);
+@@ -11217,6 +11235,10 @@
+   }
+ 
+ llvm_cbe_lA437:
++  basic_extension_reset();
++  basic_c64_close();
++  basic_graphics_close();
++  basic_sound_close();
+   llvm_cbe_tmp3213 = *((&RAM[((signed int )768u)]));
+   llvm_cbe_tmp3215 = *((&RAM[((signed int )769u)]));
+   llvm_cbe_tmp3219 = ((unsigned short )((((unsigned short )((((unsigned short )(unsigned char )llvm_cbe_tmp3215)) << ((unsigned short )8)))) | (((unsigned short )(unsigned char )llvm_cbe_tmp3213))));
+@@ -12756,6 +12778,14 @@
+   }
+ 
+ llvm_cbe_lA7EF:
++  if (A == BASIC_KEY) {
++    X = 11U;
++    goto llvm_cbe_lA437;
++  }
++  if (A >= BASIC_GRAPHICS && A < BASIC_KEY) {
++    PC = basic_extension_begin(false);
++    goto basic_extension_dispatch;
++  }
+   llvm_cbe_tmp8654 = *(&A);
+   llvm_cbe_tmp8656 = *(&C);
+   llvm_cbe_tmp8659 = ((unsigned short )((((unsigned short )((((unsigned short )(unsigned char )llvm_cbe_tmp8654)) + ((unsigned short )-129)))) + (((signed short )(signed char )llvm_cbe_tmp8656))));
+@@ -15457,7 +15487,11 @@
+ llvm_cbe_lB816:
+   llvm_cbe_tmp32218 = *((&RAM[((signed int )20u)]));
+   llvm_cbe_tmp32220 = *((&RAM[((signed int )21u)]));
+-  llvm_cbe_tmp32229 = *((&RAM[((signed int )(((((unsigned int )(unsigned char )llvm_cbe_tmp32220)) << 8u) | (((unsigned int )(unsigned char )llvm_cbe_tmp32218))))]));
++  if (!basic_c64_read((unsigned short)((((unsigned int)(unsigned char)llvm_cbe_tmp32220) << 8u) |
++                                       ((unsigned int)(unsigned char)llvm_cbe_tmp32218)),
++                      &llvm_cbe_tmp32229)) {
++    goto llvm_cbe_lB248;
++  }
+   *(&Y) = llvm_cbe_tmp32229;
+   llvm_cbe_tmp32253 = *(&S);
+   llvm_cbe_tmp32259 = *((&RAM[((signed int )((((unsigned int )(unsigned char )(((unsigned char )(llvm_cbe_tmp32253 + ((unsigned char )1)))))) | 256u))]));
+@@ -16843,6 +16877,15 @@
+   goto llvm_cbe_lA5B8;
+ 
+ llvm_cbe_lA5AC:
++  {
++    unsigned extension = basic_extension_tokenize(llvm_cbe_X_2e_tmp_2e_151322);
++    if (extension != 0U) {
++      llvm_cbe_X_2e_tmp_2e_3__PHI_TEMPORARY = extension >> 8U;
++      llvm_cbe_A_2e_tmp_2e_251320__PHI_TEMPORARY = extension & 255U;
++      llvm_cbe_Y_2e_tmp_2e_351315__PHI_TEMPORARY = llvm_cbe_Y_2e_tmp_2e_8;
++      goto llvm_cbe_lA5C9;
++    }
++  }
+   *((&RAM[((signed int )113u)])) = llvm_cbe_Y_2e_tmp_2e_8;
+   *((&RAM[((signed int )11u)])) = ((unsigned char )0);
+   *((&RAM[((signed int )122u)])) = llvm_cbe_X_2e_tmp_2e_151322;
+@@ -19261,6 +19304,14 @@
+   goto llvm_cbe_lB113;
+ 
+ llvm_cbe_lAE8D:
++  if (A >= BASIC_GRAPHICS && A != BASIC_KEY) {
++    X = 11U;
++    goto llvm_cbe_lA437;
++  }
++  if (A == BASIC_KEY) {
++    PC = basic_extension_begin(true);
++    goto basic_extension_dispatch;
++  }
+   llvm_cbe_tmp17478 = *(&C);
+   if (llvm_cbe_tmp17478 == ((unsigned char )0)) {
+     goto llvm_cbe_lBCF3;
+@@ -20844,7 +20895,11 @@
+   *(&N) = ((unsigned char )0);
+   llvm_cbe_tmp32324 = *((&RAM[((signed int )20u)]));
+   llvm_cbe_tmp32326 = *((&RAM[((signed int )21u)]));
+-  *((&RAM[((signed int )(((((unsigned int )(unsigned char )llvm_cbe_tmp32326)) << 8u) | (((unsigned int )(unsigned char )llvm_cbe_tmp32324))))])) = llvm_cbe_tmp32301;
++  if (!basic_c64_write((unsigned short)((((unsigned int)(unsigned char)llvm_cbe_tmp32326) << 8u) |
++                                        ((unsigned int)(unsigned char)llvm_cbe_tmp32324)),
++                       llvm_cbe_tmp32301)) {
++    goto llvm_cbe_lB248;
++  }
+   llvm_cbe_tmp32336 = *(&S);
+   llvm_cbe_tmp32342 = *((&RAM[((signed int )((((unsigned int )(unsigned char )(((unsigned char )(llvm_cbe_tmp32336 + ((unsigned char )1)))))) | 256u))]));
+   llvm_cbe_tmp32345 = ((unsigned char )(llvm_cbe_tmp32336 + ((unsigned char )2)));
+@@ -25775,6 +25830,14 @@
+   } while (1); /* end of syntactic loop 'bb48000' */
+   do {     /* Syntactic loop 'not_found' to make GCC happy */
+ llvm_cbe_not_found:
++  if (PC == BASIC_EXTENSION_RETURN) {
++    PC = basic_extension_resume();
++    goto basic_extension_dispatch;
++  }
++  if (PC == 0x0310) {
++    basic_unsupported();
++    goto llvm_cbe_lB248;
++  }
+   llvm_cbe_tmp1848 = *(&PC);
+   llvm_cbe_tmp18481849 = ((unsigned int )(unsigned short )llvm_cbe_tmp1848);
+   llvm_cbe_tmp1851 = *((&RAM[((signed int )llvm_cbe_tmp18481849)]));
+@@ -25809,6 +25872,20 @@
+     goto llvm_cbe_bb48000;
+   }
+ 
++basic_extension_dispatch:
++  // Fixed interpreter-native continuations, never recursive core entry.
++  switch (PC) {
++    case 0U: goto llvm_cbe_bb1876;
++    case 0xad9eU:
++      llvm_cbe_tmp16090_2e_rle52095__PHI_TEMPORARY = S;
++      goto llvm_cbe_lAD9E;
++    case 0xb6a3U:
++      llvm_cbe_storemerge49070_2e_in__PHI_TEMPORARY = S + 1U;
++      goto llvm_cbe_lB6A3;
++    case 0xa82fU: goto llvm_cbe_lA82F;
++    default: goto llvm_cbe_lA437;
++  }
++
+ llvm_cbe_app_not_found:
+   llvm_cbe_tmp1871 = kernal_dispatch();
+   if (llvm_cbe_tmp1871 == 0u){
+@@ -26837,6 +26914,9 @@
+   }
+ 
+ llvm_cbe_lA71A:
++  if ((RAM[0x0f] & 0x80U) == 0U && basic_extension_list(A)) {
++    goto llvm_cbe_lA700;
++  }
+   llvm_cbe_tmp7477 = *(&N);
+   if (llvm_cbe_tmp7477 == ((unsigned char )0)) {
+     goto llvm_cbe_lA6F3;
+@@ -28374,4 +28454,3 @@
+   } while (1); /* end of syntactic loop 'lE455' */
+   } while (1); /* end of syntactic loop 'lE394' */
+ }
+-
+--- a/glue.h
++++ b/glue.h
+@@ -15,7 +15,7 @@
+ void CHRGET(void);
+ void CHRGOT(void);
+ 
+-int main(int, char **);
++int basic_core_main(int, char **);
+ 
+ #define VEC_ERROR	0x0300
+ #define VEC_MAIN	0x0302

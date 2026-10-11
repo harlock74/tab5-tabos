@@ -796,6 +796,98 @@ endif()
 tabos_enable_warnings(tabos_shell_rv32)
 tabos_enable_sanitizers(tabos_shell_rv32)
 
+# Optional real-application harness; ordinary CTest does not require SDK artifacts.
+add_executable(tabos_basic_rv32 "${TABOS_ROOT}/apps/basic/tests/rv32.c")
+target_include_directories(tabos_basic_rv32 PRIVATE
+    "${TABOS_ROOT}/audio/include"
+    "${TABOS_ROOT}/kernel/include" "${TABOS_ROOT}/input/include" "${TABOS_ROOT}/platform/include"
+    "${TABOS_ROOT}/console/include" "${TABOS_ROOT}/graphics/include"
+)
+if(TABOS_TARGET STREQUAL "linux")
+    target_link_libraries(tabos_basic_rv32 PRIVATE
+        "-Wl,--start-group" tabos_core tabos_platform_host "-Wl,--end-group" SDL3::SDL3
+    )
+else()
+    target_link_libraries(tabos_basic_rv32 PRIVATE tabos_core tabos_platform_host SDL3::SDL3)
+endif()
+tabos_enable_warnings(tabos_basic_rv32)
+tabos_enable_sanitizers(tabos_basic_rv32)
+
+add_executable(tabos_basic_kernal_helper "${TABOS_ROOT}/apps/basic/tests/kernal_helper.c")
+target_include_directories(tabos_basic_kernal_helper PRIVATE "${TABOS_ROOT}/apps/basic/include")
+tabos_enable_warnings(tabos_basic_kernal_helper)
+tabos_enable_sanitizers(tabos_basic_kernal_helper)
+add_test(NAME component.basic_kernal_helper COMMAND tabos_basic_kernal_helper)
+
+add_executable(tabos_basic_storage "${TABOS_ROOT}/apps/basic/tests/storage.c")
+target_include_directories(tabos_basic_storage PRIVATE "${TABOS_ROOT}/apps/basic/include")
+tabos_enable_sanitizers(tabos_basic_storage)
+add_test(NAME component.basic_storage COMMAND tabos_basic_storage)
+
+add_executable(tabos_basic_native
+    "${TABOS_ROOT}/apps/basic/src/main.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_engine.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_kernal.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_storage.c"
+    "${TABOS_ROOT}/apps/basic/src/tabos_runtime.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_extensions.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_graphics.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_c64.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_sid.c"
+    "${TABOS_ROOT}/apps/basic/src/basic_sound.c"
+    "${TABOS_ROOT}/sdk/lib/graphics.c"
+    "${TABOS_ROOT}/sdk/lib/audio.c"
+    "${TABOS_ROOT}/apps/basic/tests/media_platform.c"
+    "${TABOS_ROOT}/apps/basic/upstream/cbmbasic.c"
+    "${TABOS_ROOT}/apps/basic/tests/native_platform.c"
+)
+target_include_directories(tabos_basic_native PRIVATE
+    "${TABOS_ROOT}/apps/basic/include" "${TABOS_ROOT}/sdk/include"
+)
+tabos_enable_sanitizers(tabos_basic_native)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME component.basic_native
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/native.py" $<TARGET_FILE:tabos_basic_native>
+)
+set_tests_properties(component.basic_native PROPERTIES TIMEOUT 60)
+add_test(NAME component.basic_compatibility
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/compatibility.py" $<TARGET_FILE:tabos_basic_native>
+)
+set_tests_properties(component.basic_compatibility PROPERTIES TIMEOUT 60)
+add_test(NAME component.basic_policy
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/policy.py" $<TARGET_FILE:tabos_basic_native>
+)
+set_tests_properties(component.basic_policy PROPERTIES TIMEOUT 60)
+add_test(NAME component.basic_graphics
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/graphics.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_graphics PROPERTIES TIMEOUT 60)
+add_test(NAME component.basic_c64_graphics
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/c64_graphics.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_c64_graphics PROPERTIES TIMEOUT 90)
+add_test(NAME component.basic_c64_profile
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/j0_profile.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_c64_profile PROPERTIES TIMEOUT 90)
+add_test(NAME component.basic_c64_sid
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/c64_sid.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_c64_sid PROPERTIES TIMEOUT 60)
+add_executable(tabos_basic_sid_math
+    "${TABOS_ROOT}/apps/basic/src/basic_sid.c"
+    "${TABOS_ROOT}/apps/basic/tests/sid_math.c")
+target_include_directories(tabos_basic_sid_math PRIVATE
+    "${TABOS_ROOT}/apps/basic/include" "${TABOS_ROOT}/sdk/include")
+tabos_enable_warnings(tabos_basic_sid_math)
+tabos_enable_sanitizers(tabos_basic_sid_math)
+add_test(NAME component.basic_sid_math COMMAND tabos_basic_sid_math)
+add_test(NAME component.basic_examples
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/build_examples.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_examples PROPERTIES TIMEOUT 60)
+add_test(NAME component.basic_release_audit
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/release_audit.py")
+add_test(NAME component.basic_release_session
+    COMMAND "${Python3_EXECUTABLE}" "${TABOS_ROOT}/apps/basic/tests/release_session.py" $<TARGET_FILE:tabos_basic_native>)
+set_tests_properties(component.basic_release_session PROPERTIES TIMEOUT 90)
+target_compile_definitions(tabos_basic_rv32 PRIVATE TABOS_BASIC_EXAMPLES_DIR="${TABOS_ROOT}/apps/basic/examples")
+
 add_executable(tabos_application_lifecycle unit/application_lifecycle.c ${TABOS_TEST_PLATFORM_FAKES})
 target_include_directories(tabos_application_lifecycle PRIVATE
     "${TABOS_ROOT}/console/include"

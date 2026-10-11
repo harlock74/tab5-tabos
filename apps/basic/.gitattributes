@@ -1,0 +1,3 @@
+# Preserve generated upstream formatting and unified-diff context whitespace.
+upstream/cbmbasic.c -whitespace
+upstream/patches/*.patch -whitespace
