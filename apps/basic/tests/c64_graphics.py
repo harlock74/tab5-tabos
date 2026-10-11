@@ -75,6 +75,26 @@ with tempfile.TemporaryDirectory(prefix='basic-i-c64-') as root:
         s.command('POKE 53277,0:POKE 53248,100')
         checks += 7
 
+        # Screen RAM may simultaneously hold sprite bitmap data. Both damage
+        # classes must be accumulated so transparent updates restore old pixels.
+        s.command('POKE 53269,0:POKE 53280,14:POKE 53281,6')
+        s.command('POKE 2040,16:POKE 53248,0:POKE 53249,0:POKE 53287,1')
+        s.command('POKE 1024,128:POKE 53269,1')
+        assert s.pixel(0,0) == palette[1]
+        s.command('POKE 1024,0')
+        assert s.pixel(0,0) == palette[14]
+
+        # Pointer-table bytes can also alias another sprite's bitmap. Updating
+        # sprite zero's pointer must therefore damage sprite one's old bounds.
+        s.command('POKE 53269,0:POKE 2041,31:POKE 2040,255')
+        s.command('POKE 53250,0:POKE 53251,0:POKE 53288,1:POKE 53269,2')
+        assert s.pixel(16,18) == palette[1]
+        s.command('POKE 2040,0')
+        assert s.pixel(16,18) == palette[14]
+        s.command('POKE 53269,0:POKE 2040,13:POKE 2041,13')
+        s.command('POKE 53248,100:POKE 53249,80:POKE 53287,5:POKE 53269,1')
+        checks += 4
+
         # Multicolour pair 01 uses D025 and occupies two logical pixels.
         s.command('POKE 53277,0:POKE 53271,0:POKE 53276,1')
         s.command('POKE 53285,3:POKE 53286,4:POKE 832,64')

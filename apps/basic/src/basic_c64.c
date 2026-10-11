@@ -203,14 +203,14 @@ static bool mark_all_sprites(void)
 
 static bool mark_bank_effect(uint16_t address)
 {
+    bool marked = false;
     if (address >= C64_SCREEN_START && address <= C64_SCREEN_END) {
         mark_cell(address - C64_SCREEN_START);
-        return true;
+        marked = true;
     }
     if (address >= C64_POINTER_START && address <= C64_POINTER_END) {
-        return mark_sprite(address - C64_POINTER_START);
+        marked = mark_sprite(address - C64_POINTER_START) || marked;
     }
-    bool marked = false;
     for (unsigned sprite = 0U; sprite < C64_SPRITES; ++sprite) {
         const unsigned base = state.bank[C64_POINTER_START + sprite] * 64U;
         if (address >= base && address < base + 63U) {

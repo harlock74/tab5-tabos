@@ -15,18 +15,19 @@ enum {
     SID_VOICES           = 3,
     SID_VOICE_REGISTERS  = 7,
     SID_SAMPLE_RATE      = TABOS_AUDIO_SAMPLE_RATE_44100,
-    SID_CHUNK_SAMPLES    = 256,
-    SID_QUEUE_TARGET     = 4096,
-    SID_SERVICE_MS       = 5,
-    SID_CLOCK_HZ         = 985248,
-    SID_MASTER_REGISTER  = 0x18,
-    SID_CONTROL_GATE     = 0x01,
-    SID_CONTROL_TEST     = 0x08,
-    SID_CONTROL_TRIANGLE = 0x10,
-    SID_CONTROL_SAW      = 0x20,
-    SID_CONTROL_PULSE    = 0x40,
-    SID_CONTROL_NOISE    = 0x80,
-    SID_OUTPUT_LEVEL     = 6000
+    SID_CHUNK_SAMPLES       = 256,
+    SID_QUEUE_TARGET        = 4096,
+    SID_SERVICE_MS          = 5,
+    SID_DOWNSTREAM_DRAIN_MS = 25,
+    SID_CLOCK_HZ            = 985248,
+    SID_MASTER_REGISTER     = 0x18,
+    SID_CONTROL_GATE        = 0x01,
+    SID_CONTROL_TEST        = 0x08,
+    SID_CONTROL_TRIANGLE    = 0x10,
+    SID_CONTROL_SAW         = 0x20,
+    SID_CONTROL_PULSE       = 0x40,
+    SID_CONTROL_NOISE       = 0x80,
+    SID_OUTPUT_LEVEL        = 6000
 };
 
 typedef enum {
@@ -53,6 +54,7 @@ typedef struct {
         uint32_t pending_bytes;
         uint32_t pending_offset;
         uint64_t next_service;
+        uint64_t drain_deadline;
         bool stream_open;
         bool audio_failed;
 } sid_state_t;
@@ -112,6 +114,7 @@ static void close_stream(void)
     }
     state.pending_bytes  = 0U;
     state.pending_offset = 0U;
+    state.drain_deadline = 0U;
 }
 
 void basic_sid_close(void)
@@ -140,6 +143,7 @@ static void update_gate(unsigned voice_index, uint8_t control)
     const bool gate    = (control & SID_CONTROL_GATE) != 0U;
     if (gate && !voice->gate) {
         voice->stage = ENVELOPE_ATTACK;
+        state.drain_deadline = 0U;
     } else if (!gate && voice->gate && voice->stage != ENVELOPE_OFF) {
         voice->stage = ENVELOPE_RELEASE;
     }
@@ -307,8 +311,8 @@ static bool open_stream(void)
 
 void basic_sid_service(void)
 {
-    if (!any_voice_running()) {
-        close_stream();
+    const bool running = any_voice_running();
+    if (!running && state.pending_bytes == 0U && !state.stream_open) {
         return;
     }
     const uint64_t now = tabos_monotonic_ms();
@@ -316,10 +320,11 @@ void basic_sid_service(void)
         return;
     }
     const bool audible = (state.registers[SID_MASTER_REGISTER] & 15U) != 0U;
-    if (!audible && state.stream_open) {
+    if (!audible) {
         close_stream();
+        return;
     }
-    if (audible && !open_stream()) {
+    if (!open_stream()) {
         state.next_service = now + SID_SERVICE_MS;
         return;
     }
@@ -331,19 +336,37 @@ void basic_sid_service(void)
             state.audio_failed = true;
             return;
         }
+        if (!running && state.pending_bytes == 0U) {
+            if (status.buffered_bytes != 0U) {
+                state.drain_deadline = 0U;
+                state.next_service  = now + SID_SERVICE_MS;
+                return;
+            }
+            if (state.drain_deadline == 0U) {
+                // buffered_bytes covers TabOS's ring, while a backend may
+                // already hold one rendered block. The largest current block
+                // is 1024 frames at 44.1 kHz (23.2 ms), so retain the stream
+                // for one bounded 25 ms grace period after the ring empties.
+                state.drain_deadline = now + SID_DOWNSTREAM_DRAIN_MS;
+            }
+            if (now < state.drain_deadline) {
+                state.next_service = now + SID_SERVICE_MS;
+                return;
+            }
+            close_stream();
+            return;
+        }
+        state.drain_deadline = 0U;
         if (state.pending_bytes == 0U && status.buffered_bytes >= SID_QUEUE_TARGET) {
             state.next_service = now + SID_SERVICE_MS;
             return;
         }
         buffered_bytes = status.buffered_bytes;
     }
-    if (state.pending_bytes == 0U) {
+    if (state.pending_bytes == 0U && running) {
         generate_chunk();
     }
-    if (!audible) {
-        state.pending_bytes  = 0U;
-        state.pending_offset = 0U;
-    } else {
+    if (state.pending_bytes != 0U) {
         const int written =
             tabos_audio_write(state.stream, (const uint8_t*) state.samples + state.pending_offset, state.pending_bytes);
         if (written > 0) {
@@ -355,5 +378,6 @@ void basic_sid_service(void)
             state.audio_failed = true;
         }
     }
-    state.next_service = state.pending_bytes == 0U && buffered_bytes < SID_QUEUE_TARGET ? now : now + SID_SERVICE_MS;
+    state.next_service =
+        running && state.pending_bytes == 0U && buffered_bytes < SID_QUEUE_TARGET ? now : now + SID_SERVICE_MS;
 }

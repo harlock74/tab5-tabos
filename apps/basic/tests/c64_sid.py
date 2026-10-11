@@ -32,7 +32,9 @@ with tempfile.TemporaryDirectory(prefix='basic-j1-sid-') as root:
         hashes = [line for line in lines if line.startswith('PCM_HASH ')]
         assert hashes and len(set(hashes)) > 1, hashes
         session.command('POKE 54276,16')
-        time.sleep(.05)
+        deadline = time.monotonic() + .3
+        while (not trace_lines(session) or trace_lines(session)[-1] != 'AUDIO_CLOSE 0') and time.monotonic() < deadline:
+            time.sleep(.01)
         session.command('PRINT 123', '123')
         assert trace_lines(session)[-1] == 'AUDIO_CLOSE 0', trace_lines(session)[-10:]
         checks += 5
