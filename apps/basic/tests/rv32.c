@@ -636,8 +636,8 @@ static void graphics_acceptance(void)
     check(audio_nonzero_samples > sid_samples, "non-silent SID PCM reached timed consumer");
     ready_command("PRINT PEEK(54272);PEEK(54273);PEEK(54276);PEEK(54296)", "\n 214  28  33  15 ");
     ready_command("POKE 54276,32", "READY.");
-    const uint64_t release_until = platform_time_ms() + 40U;
-    while (platform_time_ms() < release_until) {
+    const uint64_t release_until = platform_time_ms() + 250U;
+    while (audio_service_power_inhibited() && platform_time_ms() < release_until) {
         pump();
     }
     check(!audio_service_power_inhibited(), "SID release closes stream");

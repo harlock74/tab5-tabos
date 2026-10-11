@@ -80,10 +80,13 @@ sound continues and input remains responsive without a busy wait.
 
 Register POKEs configure state and do not synchronously play or drain a tone.
 Native `SOUND` remains its separate synchronous generator; either path closes the
-other path's stream before taking audio ownership. `TEXT`, Ctrl+C, Ctrl+Q, process
-exit and a completed release close the SID stream and silence voices. Virtual
-registers reset on a new BASIC process and are not saved as device state. BASIC
-programs containing the POKEs still LIST/SAVE/LOAD normally.
+other path's stream before taking audio ownership. A normally completed release
+finishes partial PCM writes, drains the public TabOS stream queue, and retains the
+stream for a bounded 25 ms grace period covering one backend render block before
+closing it. `TEXT`, Ctrl+C, Ctrl+Q and process exit are explicit cancellation
+boundaries and close immediately. Virtual registers reset on a new BASIC process
+and are not saved as device state. BASIC programs containing the POKEs still
+LIST/SAVE/LOAD normally.
 
 The fixed SID state adds 632 bytes of application BSS, including the 512-byte PCM
 staging buffer. The requested 256 KiB heap and 32 KiB stack are unchanged. The
