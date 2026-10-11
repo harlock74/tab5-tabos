@@ -9,12 +9,12 @@
 #include <tabos/runtime_time.h>
 
 enum {
-    SID_START            = 0xd400,
-    SID_END              = 0xd418,
-    SID_REGISTER_COUNT   = SID_END - SID_START + 1,
-    SID_VOICES           = 3,
-    SID_VOICE_REGISTERS  = 7,
-    SID_SAMPLE_RATE      = TABOS_AUDIO_SAMPLE_RATE_44100,
+    SID_START               = 0xd400,
+    SID_END                 = 0xd418,
+    SID_REGISTER_COUNT      = SID_END - SID_START + 1,
+    SID_VOICES              = 3,
+    SID_VOICE_REGISTERS     = 7,
+    SID_SAMPLE_RATE         = TABOS_AUDIO_SAMPLE_RATE_44100,
     SID_CHUNK_SAMPLES       = 256,
     SID_QUEUE_TARGET        = 4096,
     SID_SERVICE_MS          = 5,
