@@ -41,8 +41,8 @@ int main(int argc, char** argv)
         }
     }
     uint64_t active_ms = 0U, frames = 0U, ticks_total = 0U;
-    uint64_t simulation_ms = 0U, render_ms = 0U, present_ms = 0U;
-    uint64_t max_simulation_ms = 0U, max_render_ms = 0U, max_present_ms = 0U;
+    uint64_t simulation_ms = 0U, render_ms = 0U, submit_ms = 0U;
+    uint64_t max_simulation_ms = 0U, max_render_ms = 0U, max_submit_ms = 0U;
     uint32_t tty = 0U;
     if (ioctl(STDIN_FILENO, TABOS_TTY_GET_MODE, &tty) != 0 ||
         ioctl(STDIN_FILENO, TABOS_TTY_SET_MODE, tty | (uint32_t) TABOS_TTY_MODE_RAW_INPUT) != 0) {
@@ -171,24 +171,24 @@ int main(int argc, char** argv)
                 break;
             }
             const uint64_t render_duration = profiling ? tabos_monotonic_ms() - render_start : 0U;
-            uint64_t present_start         = 0U;
+            uint64_t submit_start          = 0U;
             if (profiling) {
-                present_start = tabos_monotonic_ms();
+                submit_start = tabos_monotonic_ms();
             }
-            if (tabos_graphics_present(&graphics) != 0) {
+            if (tabos_graphics_submit(&graphics) != 0) {
                 status = 1;
                 break;
             }
-            const uint64_t present_duration = profiling ? tabos_monotonic_ms() - present_start : 0U;
+            const uint64_t submit_duration = profiling ? tabos_monotonic_ms() - submit_start : 0U;
             if (profiling && is_active) {
                 ++frames;
                 render_ms  += render_duration;
-                present_ms += present_duration;
+                submit_ms += submit_duration;
                 if (render_duration > max_render_ms) {
                     max_render_ms = render_duration;
                 }
-                if (present_duration > max_present_ms) {
-                    max_present_ms = present_duration;
+                if (submit_duration > max_submit_ms) {
+                    max_submit_ms = submit_duration;
                 }
             }
         }
@@ -216,10 +216,10 @@ int main(int argc, char** argv)
                "  elapsed: %" PRIu64 " ms; frames: %" PRIu64 "; ticks: %" PRIu64 "\n"
                "  simulation: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
                "  render: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
-               "  present: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
+               "  submit: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
                "  catch-up discarded: %" PRIu64 " ms\n",
-               active_ms, frames, ticks_total, simulation_ms, max_simulation_ms, render_ms, max_render_ms, present_ms,
-               max_present_ms, clock.discarded_ms);
+               active_ms, frames, ticks_total, simulation_ms, max_simulation_ms, render_ms, max_render_ms, submit_ms,
+               max_submit_ms, clock.discarded_ms);
     }
     return status;
 }

@@ -89,8 +89,7 @@ controls. Its table geometry, rack and numbered ball artwork remain unchanged.
 
 ## Geometry checkpoint
 
-A 639×360 RGB565 canvas fills the Tab5 landscape display at 2× except for one
-physical black pixel at each side. Table-local
+A 640×360 RGB565 canvas fills the Tab5 landscape display at 2×. Table-local
 coordinates run from `(0,0)` to `(528,264)`, with positive Y down; rendering adds
 `(56,48)`. The ball radius is 7 logical pixels. HUD/instructions fit outside
 the rails and leave the upper-right region available for OS status overlays.
@@ -112,9 +111,9 @@ with a solid and stripe at opposite rear corners. The small diagonal rack gaps
 are intentional at this stage; a tighter fractional rack requires explicit review before any future change. Labels 1–15 use compact 3×5 digits on light patches, and stripes have
 white caps and colored bands.
 
-The game draws through public SDK primitives into one 460,080-byte logical canvas.
+The game draws through public SDK primitives into one 460,800-byte logical canvas.
 Application metadata requests a 1 MiB heap and 16 KiB stack. It uses a fixed
-60 Hz clock, bounds catch-up to 100 ms, and subtracts presentation time before
+60 Hz clock, bounds catch-up to 100 ms, and subtracts elapsed frame work before
 sleeping. Idle or pre-transition time never advances a newly pressed control or
 resumed shot. It redraws on changes and requests an infinite keyboard wait when
 neither movement nor continuous adjustment is active.
@@ -452,14 +451,14 @@ It opens a window and drives its own temporary filesystem session. Its printed
 latency and moving-frame samples are observational, not fixed timing assertions.
 
 Launch `pool --profile` for aggregate device-side timing. After quitting, it
-reports active elapsed time, displayed frames, fixed simulation ticks, total and
-worst simulation/render/present time, and discarded catch-up time. Profiling does
+reports active elapsed time, submitted frames, fixed simulation ticks, total and
+worst simulation/render/submit time, and discarded catch-up time. Profiling does
 not print during play. Ball positions are rendered with the clock's remaining
 fixed-tick fraction, keeping visible motion evenly paced when presentation runs
 below the 60 Hz simulation rate; physics, contacts, rules and shot duration still
 advance only through the existing fixed ticks.
 
-The 639x360 logical canvas leaves one black physical pixel at each side when
-scaled on the 1280x720 Tab5. This deliberately selects the existing letterboxed
-presentation path, which avoids a redundant native-frame copy. All table and
-physics coordinates retain their original geometry.
+Pool uses the SDK's ordinary frame submission after drawing each interpolated
+frame. On the updated Tab5 backend this overlaps display work with the next wait
+and simulation cycle while retaining the SDK's copy semantics for the logical
+canvas. The full 640x360 canvas maps exactly to the 1280x720 display.

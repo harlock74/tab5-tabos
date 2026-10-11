@@ -9,7 +9,6 @@
 #include <string.h>
 
 static unsigned int presents;
-static unsigned int clears;
 static int present_result;
 
 static int open_graphics(uint32_t* width, uint32_t* height)
@@ -30,18 +29,11 @@ static int present(void)
     return present_result;
 }
 
-static int clear(uint32_t color)
-{
-    assert(color == 0U);
-    ++clears;
-    return 0;
-}
-
 static int blit(const tabos_graphics_blit_options_t* options)
 {
-    assert(options->bitmap_width == 639U && options->bitmap_height == 360U);
-    assert(options->destination.x == 1 && options->destination.y == 0);
-    assert(options->destination.width == 1278U && options->destination.height == 720U);
+    assert(options->bitmap_width == 640U && options->bitmap_height == 360U);
+    assert(options->destination.x == 0 && options->destination.y == 0);
+    assert(options->destination.width == 1280U && options->destination.height == 720U);
     assert(options->pixels != NULL);
     return 0;
 }
@@ -50,7 +42,6 @@ static const tabos_elf_api_t api = {
     .abi_version      = TABOS_ELF_API_VERSION,
     .graphics_open    = open_graphics,
     .graphics_close   = close_graphics,
-    .graphics_clear   = clear,
     .graphics_present = present,
     .graphics_blit_ex = blit,
 };
@@ -90,7 +81,7 @@ int main(void)
     pool_game_reset(&game);
     assert(tabos_graphics_open(&graphics) == 0);
     assert(graphics.scale == 2U);
-    assert(pool_render(&graphics, &game) == 0 && presents == 1U && clears == 1U);
+    assert(pool_render(&graphics, &game) == 0 && presents == 1U);
     assert(pixel(&graphics, 100, 101) == TABOS_RGB565(23, 112, 88));
     assert(pixel(&graphics, 100, 44) == TABOS_RGB565(17, 78, 64));
     for (unsigned int i = 0U; i < POOL_POCKET_COUNT; ++i) {

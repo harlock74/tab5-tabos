@@ -5,7 +5,7 @@
 #include <pool/game.h>
 
 enum {
-    POOL_CANVAS_WIDTH  = 639,
+    POOL_CANVAS_WIDTH  = 640,
     POOL_CANVAS_HEIGHT = 360,
     POOL_TABLE_X       = 56,
     POOL_TABLE_Y       = 48
