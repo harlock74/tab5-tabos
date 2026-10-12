@@ -29,7 +29,9 @@ static bool sound_enabled(const pool_game_t* game)
     return !game->muted && !game->title && !game->help && !game->paused && !game->restart_pending;
 }
 
-enum { POOL_FRAME_COUNT = 2 };
+enum {
+    POOL_FRAME_COUNT = 2
+};
 
 int main(int argc, char** argv)
 {
@@ -61,12 +63,19 @@ int main(int argc, char** argv)
     }
     tabos_color_t* frame_buffers[POOL_FRAME_COUNT] = {graphics.pixels};
     const size_t frame_pixels                      = (size_t) graphics.width * graphics.height;
+    tabos_color_t* background                      = calloc(frame_pixels, sizeof(*background));
+    if (background == NULL) {
+        (void) tabos_graphics_close(&graphics);
+        fprintf(stderr, "pool: background buffer unavailable\n");
+        return 1;
+    }
     for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
         frame_buffers[frame] = calloc(frame_pixels, sizeof(*frame_buffers[frame]));
         if (frame_buffers[frame] == NULL) {
             for (unsigned int allocated = 1U; allocated < frame; ++allocated) {
                 free(frame_buffers[allocated]);
             }
+            free(background);
             (void) tabos_graphics_close(&graphics);
             fprintf(stderr, "pool: frame buffers unavailable\n");
             return 1;
@@ -77,8 +86,42 @@ int main(int argc, char** argv)
         for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
             free(frame_buffers[frame]);
         }
+        free(background);
         (void) tabos_graphics_close(&graphics);
         fprintf(stderr, "pool: render jobs unavailable\n");
+        return 1;
+    }
+    /* Compute job descriptors must reside in the committed application heap. */
+    pool_render_background_job_t* background_job = calloc(1U, sizeof(*background_job));
+    if (background_job == NULL) {
+        free(render_jobs);
+        for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
+            free(frame_buffers[frame]);
+        }
+        free(background);
+        (void) tabos_graphics_close(&graphics);
+        fprintf(stderr, "pool: background job unavailable\n");
+        return 1;
+    }
+    background_job->pixels = background;
+    int background_status =
+        tabos_compute_submit(pool_render_background_execute, background_job, sizeof(*background_job));
+    if (background_status == -TABOS_ENOTSUP) {
+        pool_render_background_execute(background_job);
+        background_status = 0;
+    } else if (background_status == 0) {
+        background_status = tabos_compute_wait();
+    }
+    const int background_result = background_job->result;
+    free(background_job);
+    if (background_status != 0 || background_result != 0) {
+        free(render_jobs);
+        for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
+            free(frame_buffers[frame]);
+        }
+        free(background);
+        (void) tabos_graphics_close(&graphics);
+        fprintf(stderr, "pool: background rendering failed\n");
         return 1;
     }
     tabos_wait_item_t input = {.source = tabos_input_wait_source(), .events = TABOS_WAIT_READABLE};
@@ -90,12 +133,12 @@ int main(int argc, char** argv)
     pool_sound_t sound = {.stream = TABOS_AUDIO_STREAM_INVALID};
     pool_ai_t ai;
     pool_ai_reset(&ai, UINT32_C(0x504f4f4c));
-    pool_input_t controls = {0};
-    bool dirty            = true;
+    pool_input_t controls       = {0};
+    bool dirty                  = true;
     unsigned int frame_index    = 0U;
     unsigned int frames_pending = 0U;
-    uint64_t previous     = tabos_monotonic_ms();
-    pool_clock_t clock    = {0};
+    uint64_t previous           = tabos_monotonic_ms();
+    pool_clock_t clock          = {0};
     while (!controls.quit && status == 0) {
         pool_sound_effect_t effect = POOL_SOUND_NONE;
         const bool was_active      = active(&game, &controls);
@@ -208,7 +251,7 @@ int main(int argc, char** argv)
                 render_start = tabos_monotonic_ms();
             }
             pool_render_job_t* render_job = &render_jobs[frame_index];
-            pool_render_prepare(render_job, graphics.pixels, &game, motion, clock.accumulator);
+            pool_render_prepare(render_job, graphics.pixels, background, &game, motion, clock.accumulator);
             int render_status = tabos_compute_submit(pool_render_execute, render_job, sizeof(*render_job));
             if (render_status == -TABOS_ENOTSUP) {
                 pool_render_execute(render_job);
@@ -230,14 +273,14 @@ int main(int argc, char** argv)
                 break;
             }
             ++frames_pending;
-            frame_index     = (frame_index + 1U) % POOL_FRAME_COUNT;
-            graphics.pixels = frame_buffers[frame_index];
+            frame_index                    = (frame_index + 1U) % POOL_FRAME_COUNT;
+            graphics.pixels                = frame_buffers[frame_index];
             const uint64_t submit_duration = profiling ? tabos_monotonic_ms() - submit_start : 0U;
             if (profiling && is_active) {
                 ++frames;
-                wait_ms    += wait_duration;
-                render_ms  += render_duration;
-                submit_ms  += submit_duration;
+                wait_ms   += wait_duration;
+                render_ms += render_duration;
+                submit_ms += submit_duration;
                 if (wait_duration > max_wait_ms) {
                     max_wait_ms = wait_duration;
                 }
@@ -253,6 +296,12 @@ int main(int argc, char** argv)
         uint32_t timeout = TABOS_WAIT_TIMEOUT_INFINITE;
         if (active(&game, &controls)) {
             timeout = pool_clock_wait(&clock, tabos_monotonic_ms() - previous);
+        } else if (frames_pending != 0U) {
+            if (tabos_graphics_wait(&graphics) != 0) {
+                status = 1;
+                break;
+            }
+            frames_pending = 0U;
         }
         if (tabos_wait(&input, 1U, timeout) < 0) {
             status = 1;
@@ -273,6 +322,7 @@ int main(int argc, char** argv)
         free(frame_buffers[frame]);
     }
     free(render_jobs);
+    free(background);
     if (status != 0) {
         fprintf(stderr, "pool: graphics or input service failed\n");
     }

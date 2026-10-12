@@ -95,6 +95,20 @@ int main(void)
     assert(tabos_graphics_open(&graphics) == 0);
     assert(graphics.scale == 2U);
     assert(pool_render(&graphics, &game) == 0 && presents == 1U);
+    const size_t canvas_bytes = (size_t) POOL_CANVAS_WIDTH * POOL_CANVAS_HEIGHT * sizeof(tabos_color_t);
+    tabos_color_t* background = malloc(canvas_bytes);
+    tabos_color_t* cached     = malloc(canvas_bytes);
+    assert(background != NULL && cached != NULL);
+    pool_render_background_job_t background_job = {.pixels = background};
+    pool_render_background_execute(&background_job);
+    assert(background_job.result == 0);
+    pool_render_job_t cached_job;
+    pool_render_prepare(&cached_job, cached, background, &game, NULL, 0U);
+    pool_render_execute(&cached_job);
+    assert(cached_job.result == 0);
+    assert(memcmp(graphics.pixels, cached, canvas_bytes) == 0);
+    free(cached);
+    free(background);
     assert(pixel(&graphics, 100, 101) == TABOS_RGB565(23, 112, 88));
     assert(pixel(&graphics, 100, 44) == TABOS_RGB565(17, 78, 64));
     for (unsigned int i = 0U; i < POOL_POCKET_COUNT; ++i) {
@@ -108,8 +122,8 @@ int main(void)
     }
     tabos_color_t numbers[16][35] = {{0U}};
     for (unsigned int i = 1U; i < POOL_BALL_COUNT; ++i) {
-        const int x = POOL_TABLE_X + pool_initial_balls[i].x;
-        const int y = POOL_TABLE_Y + pool_initial_balls[i].y;
+        const int x        = POOL_TABLE_X + pool_initial_balls[i].x;
+        const int y        = POOL_TABLE_Y + pool_initial_balls[i].y;
         const int canvas_x = x;
         const int canvas_y = y;
         for (int row = 0; row < 5; ++row) {

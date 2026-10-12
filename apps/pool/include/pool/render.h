@@ -15,6 +15,7 @@ enum {
 
 typedef struct {
         tabos_color_t* pixels;
+        const tabos_color_t* background;
         pool_game_t game;
         pool_game_t previous;
         uint32_t interpolation;
@@ -22,9 +23,15 @@ typedef struct {
         int result;
 } pool_render_job_t;
 
-void pool_render_prepare(pool_render_job_t* job, tabos_color_t* pixels, const pool_game_t* game,
-                         const pool_game_t* previous, uint32_t interpolation);
+typedef struct {
+        tabos_color_t* pixels;
+        int result;
+} pool_render_background_job_t;
+
+void pool_render_prepare(pool_render_job_t* job, tabos_color_t* pixels, const tabos_color_t* background,
+                         const pool_game_t* game, const pool_game_t* previous, uint32_t interpolation);
 void pool_render_execute(void* data);
+void pool_render_background_execute(void* data);
 int pool_render(tabos_graphics_t* graphics, const pool_game_t* game);
 int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const pool_game_t* previous,
                      uint32_t interpolation);

@@ -112,10 +112,12 @@ with a solid and stripe at opposite rear corners. The small diagonal rack gaps
 are intentional at this stage; a tighter fractional rack requires explicit review before any future change. Labels 1–15 use compact 3×5 digits on light patches, and stripes have
 white caps and colored bands.
 
-The game rotates through two 460,800-byte logical canvases. Application metadata
-requests a 1.25 MiB heap and 16 KiB stack. Its pure renderer uses the public bounded
-compute worker on Tab5 and falls back to synchronous rendering where that optional
-service reports `ENOTSUP`. It uses a fixed
+The game rotates through two 460,800-byte logical canvases and retains one equally
+sized background containing the unchanging table. Application metadata requests a
+1.75 MiB heap and 16 KiB stack. The background is rendered once; each full-resolution
+frame copies it and draws only the current game elements. Its pure renderer uses the
+public bounded compute worker on Tab5 and falls back to synchronous rendering where
+that optional service reports `ENOTSUP`. It uses a fixed
 60 Hz clock, bounds catch-up to 100 ms, and subtracts elapsed frame work before
 sleeping. Idle or pre-transition time never advances a newly pressed control or
 resumed shot. It redraws on changes and requests an infinite keyboard wait when
@@ -466,6 +468,7 @@ fractional geometry or letterboxing. Pool rotates through two canvases with borr
 drawing can overlap the bounded display job, then fences the batch before
 reusing a canvas. Every submitted canvas remains unchanged until that fence,
 preserving the public API's source lifetime contract without a per-frame
-snapshot. On Tab5 the public compute worker executes the pure, allocation-free
-pixel renderer natively; hosts without that optional service use the identical
-synchronous renderer.
+snapshot. A third canvas caches the static table at startup, preserving the original
+palette and geometry while avoiding its reconstruction on every moving frame. On
+Tab5 the public compute worker executes the pure, allocation-free frame composition
+natively; hosts without that optional service use the identical synchronous renderer.

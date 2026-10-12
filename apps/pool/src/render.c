@@ -86,8 +86,8 @@ static void append_unsigned(string_builder_t* builder, unsigned int value)
     char digits[10];
     unsigned int count = 0U;
     do {
-        digits[count++] = (char) ('0' + value % 10U);
-        value /= 10U;
+        digits[count++]  = (char) ('0' + value % 10U);
+        value           /= 10U;
     } while (value != 0U && count < sizeof(digits));
     while (count > 0U) {
         char digit[2] = {digits[--count], '\0'};
@@ -134,11 +134,11 @@ static void line(painter_t* painter, int x0, int y0, int x1, int y1, tabos_color
         const int twice_error = error * 2;
         if (twice_error >= dy) {
             error += dy;
-            x0 += sx;
+            x0    += sx;
         }
         if (twice_error <= dx) {
             error += dx;
-            y0 += sy;
+            y0    += sy;
         }
     }
 }
@@ -490,8 +490,19 @@ static int32_t interpolate(int32_t previous, int32_t current, uint32_t fraction)
     return previous + (int32_t) (((int64_t) current - previous) * fraction / 1000);
 }
 
-static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const pool_game_t* previous,
-                         uint32_t interpolation)
+static int render_background(tabos_color_t* pixels)
+{
+    if (pixels == NULL) {
+        return -1;
+    }
+    painter_t painter = {.pixels = pixels};
+    canvas_box(&painter, 0, 0, POOL_CANVAS_WIDTH, POOL_CANVAS_HEIGHT, BACKGROUND);
+    table(&painter);
+    return painter.error == 0 ? 0 : -1;
+}
+
+static int render_pixels(tabos_color_t* pixels, const tabos_color_t* background, const pool_game_t* game,
+                         const pool_game_t* previous, uint32_t interpolation)
 {
     if (pixels == NULL || game == NULL || interpolation >= 1000U) {
         return -1;
@@ -508,8 +519,11 @@ static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const p
         game = &frame;
     }
     painter_t painter = {.pixels = pixels};
-    canvas_box(&painter, 0, 0, POOL_CANVAS_WIDTH, POOL_CANVAS_HEIGHT, BACKGROUND);
-    table(&painter);
+    if (background != NULL) {
+        memcpy(pixels, background, (size_t) POOL_CANVAS_WIDTH * POOL_CANVAS_HEIGHT * sizeof(*pixels));
+    } else if (render_background(pixels) != 0) {
+        return -1;
+    }
     trays(&painter, game);
     feedback(&painter, game);
     aiming(&painter, game);
@@ -556,7 +570,7 @@ static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const p
     }
     text(&painter, 106, 14, state, 1, GOLD);
     char label[40];
-    const unsigned int degrees = game->angle * 3600U / POOL_ANGLE_COUNT;
+    const unsigned int degrees  = game->angle * 3600U / POOL_ANGLE_COUNT;
     string_builder_t label_text = string_builder(label, sizeof(label));
     append_text(&label_text, "AIM ");
     append_unsigned(&label_text, degrees / 10U);
@@ -596,7 +610,7 @@ static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const p
     text(&painter, 40, 338, controls, 1, WHITE);
     char progress[100];
     char status_line[100];
-    const pool_group_t group = game->rules.groups[game->rules.player];
+    const pool_group_t group       = game->rules.groups[game->rules.player];
     string_builder_t progress_text = string_builder(progress, sizeof(progress));
     if (game->rules.break_shot) {
         append_text(&progress_text, "P");
@@ -678,13 +692,14 @@ static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const p
     return 0;
 }
 
-void pool_render_prepare(pool_render_job_t* job, tabos_color_t* pixels, const pool_game_t* game,
-                         const pool_game_t* previous, uint32_t interpolation)
+void pool_render_prepare(pool_render_job_t* job, tabos_color_t* pixels, const tabos_color_t* background,
+                         const pool_game_t* game, const pool_game_t* previous, uint32_t interpolation)
 {
     if (job == NULL) {
         return;
     }
-    *job = (pool_render_job_t) {.pixels = pixels, .interpolation = interpolation, .has_previous = previous != NULL};
+    *job = (pool_render_job_t) {
+        .pixels = pixels, .background = background, .interpolation = interpolation, .has_previous = previous != NULL};
     if (game != NULL) {
         job->game = *game;
     }
@@ -697,8 +712,16 @@ void pool_render_execute(void* data)
 {
     pool_render_job_t* job = data;
     if (job != NULL) {
-        job->result = render_pixels(job->pixels, &job->game, job->has_previous ? &job->previous : NULL,
+        job->result = render_pixels(job->pixels, job->background, &job->game, job->has_previous ? &job->previous : NULL,
                                     job->interpolation);
+    }
+}
+
+void pool_render_background_execute(void* data)
+{
+    pool_render_background_job_t* job = data;
+    if (job != NULL) {
+        job->result = render_background(job->pixels);
     }
 }
 
@@ -711,7 +734,7 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
         return -1;
     }
     pool_render_job_t job;
-    pool_render_prepare(&job, tabos_graphics_pixels(graphics), game, previous, interpolation);
+    pool_render_prepare(&job, tabos_graphics_pixels(graphics), NULL, game, previous, interpolation);
     pool_render_execute(&job);
     if (job.result != 0) {
         errno = EINVAL;

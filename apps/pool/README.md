@@ -19,8 +19,9 @@ Build from the repository root with `./apps/build.sh`, or with the RISC-V
 toolchain active, `make -C apps/pool`. See [the guide](../../docs/pool.md) for
 geometry, validation, controls and the staged development plan.
 
-`table.c` owns shared table geometry and rack positions; `render.c` draws the
-logical canvas as a pure job suitable for TabOS's optional bounded compute worker;
+`table.c` owns shared table geometry and rack positions; `render.c` caches the
+unchanging full-resolution table once, then composes each frame as a pure job
+suitable for TabOS's optional bounded compute worker;
 `game.c` owns shot state/math; `physics.c` integrates motion and contacts;
 `rules.c` resolves match outcomes; `ai.c` selects bounded direct shots; `clock.c` bounds fixed ticks; `input.c` handles public key events; `main.c`
 owns scheduling, waits and graphics lifetime. `sound.c` consumes observed events

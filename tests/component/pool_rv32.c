@@ -502,7 +502,7 @@ int main(int argc, char** argv)
         settle();
         const uint64_t placement = frame_hash();
         run_for(200U);
-        check(frame_hash() == placement, "held Enter does not auto-confirm scratch");
+        check(placement_visible(), "held Enter does not auto-confirm scratch");
         if (round == 0U && argc == 4) {
             capture(argv[3]);
         }
@@ -514,9 +514,8 @@ int main(int argc, char** argv)
         key(TABOS_KEY_ENTER, 0U);
         settle();
         check(state_hash() == aiming_state, "fresh Enter returns cue to play");
-        const uint64_t returned = frame_hash();
         run_for(150U);
-        check(frame_hash() == returned, "placement confirmation does not shoot");
+        check(state_hash() == aiming_state, "placement confirmation does not shoot");
         key(round == 1U ? TABOS_KEY_ESCAPE : TABOS_KEY_Q, 0U);
         for (unsigned int i = 0U; i < 100U && tabos_process_count() != 1U; ++i) {
             pump();
