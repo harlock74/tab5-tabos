@@ -89,10 +89,11 @@ controls. Its table geometry, rack and numbered ball artwork remain unchanged.
 
 ## Geometry checkpoint
 
-A 640×360 RGB565 canvas fills the Tab5 landscape display at 2×. Table-local
-coordinates run from `(0,0)` to `(528,264)`, with positive Y down; rendering adds
-`(56,48)`. The ball radius is 7 logical pixels. HUD/instructions fit outside
-the rails and leave the upper-right region available for OS status overlays.
+A 640×360 virtual layout is rasterized into a 426×240 RGB565 canvas. TabOS scales
+it 3× to a centered 1278×720 image. Table-local coordinates run from `(0,0)` to
+`(528,264)`, with positive Y down; rendering adds `(56,48)`. The ball radius is
+7 virtual pixels. HUD/instructions fit outside the rails and leave the
+upper-right region available for OS status overlays.
 
 `apps/pool/src/table.c` is the single source for six finite cushion faces,
 their tapered backs, endpoint jaw centers (radius 2), and six pocket centers,
@@ -111,8 +112,10 @@ with a solid and stripe at opposite rear corners. The small diagonal rack gaps
 are intentional at this stage; a tighter fractional rack requires explicit review before any future change. Labels 1–15 use compact 3×5 digits on light patches, and stripes have
 white caps and colored bands.
 
-The game draws through public SDK primitives into one 460,800-byte logical canvas.
-Application metadata requests a 1 MiB heap and 16 KiB stack. It uses a fixed
+The game rotates through four 204,480-byte logical canvases. Application metadata
+requests a 1 MiB heap and 16 KiB stack. Its pure renderer uses the public bounded
+compute worker on Tab5 and falls back to synchronous rendering where that optional
+service reports `ENOTSUP`. It uses a fixed
 60 Hz clock, bounds catch-up to 100 ms, and subtracts elapsed frame work before
 sleeping. Idle or pre-transition time never advances a newly pressed control or
 resumed shot. It redraws on changes and requests an infinite keyboard wait when
@@ -318,7 +321,7 @@ expire, still screens return to indefinite input waits.
 ![Potted trays and match HUD, production-renderer fixture](images/pool-stage8-table.png)
 
 See the [help panel](images/pool-stage8-help.png) and
-[result panel](images/pool-stage8-result.png). These 640×360 captures use synthetic
+[result panel](images/pool-stage8-result.png). These captures use synthetic
 presentation states through the real renderer; they are not hardware screenshots.
 
 Optional 44.1 kHz mono PCM effects distinguish cue strike, first ball contact,
@@ -458,8 +461,13 @@ fixed-tick fraction, keeping visible motion evenly paced when presentation runs
 below the 60 Hz simulation rate; physics, contacts, rules and shot duration still
 advance only through the existing fixed ticks.
 
-Pool uses borrowed frame submission after drawing each interpolated frame. The
-canvas remains unchanged while TabOS consumes it; Pool handles input, simulation
-and its timed wait before fencing the previous frame immediately before the next
-draw. This avoids a per-frame canvas snapshot while preserving the API's source
-lifetime contract. The full 640x360 canvas maps exactly to the 1280x720 display.
+Pool draws its 640x360 virtual layout into a 426x240 logical canvas, which TabOS
+scales 3x to a centered 1278x720 output. This retains the table's physical size
+and readable ball detail while cutting logical-canvas work by more than half.
+Pool rotates through four canvases with borrowed submission so application
+drawing can overlap the bounded display job, then fences the batch before
+reusing a canvas. Every submitted canvas remains unchanged until that fence,
+preserving the public API's source lifetime contract without a per-frame
+snapshot. On Tab5 the public compute worker executes the pure, allocation-free
+pixel renderer natively; hosts without that optional service use the identical
+synchronous renderer.

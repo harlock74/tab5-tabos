@@ -2,7 +2,6 @@
 #include <pool/table.h>
 
 #include <errno.h>
-#include <stdio.h>
 #include <string.h>
 
 #define BACKGROUND TABOS_RGB565(13, 23, 29)
@@ -24,21 +23,123 @@ static const glyph_t glyphs[] = {
 };
 
 typedef struct {
-        tabos_graphics_t* graphics;
+        tabos_color_t* pixels;
         int error;
 } painter_t;
+
+static int scaled_start(int value)
+{
+    return value >= 0 ? value * 2 / 3 : -((-value * 2 + 2) / 3);
+}
+
+static int scaled_end(int value)
+{
+    return value >= 0 ? (value * 2 + 2) / 3 : -((-value * 2) / 3);
+}
+
+static int scaled_coordinate(int value)
+{
+    return value >= 0 ? (value * 2 + 1) / 3 : -((-value * 2 + 1) / 3);
+}
+
+static void canvas_box(painter_t* painter, int x, int y, int width, int height, tabos_color_t color);
 
 static void box(painter_t* painter, int x, int y, int width, int height, tabos_color_t color)
 {
     if (painter->error == 0 && width > 0 && height > 0) {
-        painter->error = tabos_graphics_fill_rect(painter->graphics, x, y, (uint32_t) width, (uint32_t) height, color);
+        const int left   = scaled_start(x);
+        const int top    = scaled_start(y);
+        const int right  = scaled_end(x + width);
+        const int bottom = scaled_end(y + height);
+        if (right > left && bottom > top) {
+            canvas_box(painter, left, top, right - left, bottom - top, color);
+        }
+    }
+}
+
+typedef struct {
+        char* text;
+        size_t capacity;
+        size_t length;
+} string_builder_t;
+
+static string_builder_t string_builder(char* text_value, size_t capacity)
+{
+    if (capacity > 0U) {
+        text_value[0] = '\0';
+    }
+    return (string_builder_t) {.text = text_value, .capacity = capacity, .length = 0U};
+}
+
+static void append_text(string_builder_t* builder, const char* value)
+{
+    while (*value != '\0' && builder->length + 1U < builder->capacity) {
+        builder->text[builder->length++] = *value++;
+    }
+    if (builder->capacity > 0U) {
+        builder->text[builder->length] = '\0';
+    }
+}
+
+static void append_unsigned(string_builder_t* builder, unsigned int value)
+{
+    char digits[10];
+    unsigned int count = 0U;
+    do {
+        digits[count++] = (char) ('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits));
+    while (count > 0U) {
+        char digit[2] = {digits[--count], '\0'};
+        append_text(builder, digit);
+    }
+}
+
+static void canvas_box(painter_t* painter, int x, int y, int width, int height, tabos_color_t color)
+{
+    if (painter->error != 0 || width <= 0 || height <= 0) {
+        return;
+    }
+    const int left   = x < 0 ? 0 : x;
+    const int top    = y < 0 ? 0 : y;
+    const int right  = x + width > POOL_CANVAS_WIDTH ? POOL_CANVAS_WIDTH : x + width;
+    const int bottom = y + height > POOL_CANVAS_HEIGHT ? POOL_CANVAS_HEIGHT : y + height;
+    if (right <= left || bottom <= top) {
+        return;
+    }
+    for (int row = top; row < bottom; ++row) {
+        tabos_color_t* destination = painter->pixels + (size_t) row * POOL_CANVAS_WIDTH + (size_t) left;
+        for (int column = left; column < right; ++column) {
+            *destination++ = color;
+        }
     }
 }
 
 static void line(painter_t* painter, int x0, int y0, int x1, int y1, tabos_color_t color)
 {
-    if (painter->error == 0) {
-        painter->error = tabos_graphics_line(painter->graphics, x0, y0, x1, y1, color);
+    x0           = scaled_coordinate(x0);
+    y0           = scaled_coordinate(y0);
+    x1           = scaled_coordinate(x1);
+    y1           = scaled_coordinate(y1);
+    const int dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+    const int sx = x0 < x1 ? 1 : -1;
+    const int dy = y1 >= y0 ? y0 - y1 : y1 - y0;
+    const int sy = y0 < y1 ? 1 : -1;
+    int error    = dx + dy;
+    for (;;) {
+        canvas_box(painter, x0, y0, 1, 1, color);
+        if (x0 == x1 && y0 == y1) {
+            return;
+        }
+        const int twice_error = error * 2;
+        if (twice_error >= dy) {
+            error += dy;
+            x0 += sx;
+        }
+        if (twice_error <= dx) {
+            error += dx;
+            y0 += sy;
+        }
     }
 }
 
@@ -125,6 +226,8 @@ static void number(painter_t* painter, int x, int y, unsigned int value)
         {7, 5, 7, 5, 7},
         {7, 5, 7, 1, 7},
     };
+    x                        = scaled_coordinate(x);
+    y                        = scaled_coordinate(y);
     const unsigned int count = value >= 10U ? 2U : 1U;
     const int start          = x - (count == 2U ? 3 : 1);
     for (unsigned int digit = 0U; digit < count; ++digit) {
@@ -135,7 +238,7 @@ static void number(painter_t* painter, int x, int y, unsigned int value)
         for (int row = 0; row < 5; ++row) {
             for (int column = 0; column < 3; ++column) {
                 if ((digits[index][row] & (1U << (2 - column))) != 0U) {
-                    box(painter, start + (int) digit * 4 + column, y - 2 + row, 1, 1, INK);
+                    canvas_box(painter, start + (int) digit * 4 + column, y - 2 + row, 1, 1, INK);
                 }
             }
         }
@@ -166,7 +269,7 @@ static void ball(painter_t* painter, int x, int y, unsigned int id)
     }
     if (id != 0U) {
         const int half = id >= 10U ? 4 : 2;
-        box(painter, x - half, y - 3, half * 2 + 1, 7, WHITE);
+        canvas_box(painter, scaled_coordinate(x) - half, scaled_coordinate(y) - 3, half * 2 + 1, 7, WHITE);
         number(painter, x, y, id);
     }
     box(painter, x - 3, y - 4, 2, 1, WHITE);
@@ -307,14 +410,14 @@ static void trays(painter_t* painter, const pool_game_t* game)
 
 static void centered(painter_t* painter, int y, const char* value, int scale, tabos_color_t color)
 {
-    text(painter, (POOL_CANVAS_WIDTH - (int) strlen(value) * 6 * scale + scale) / 2, y, value, scale, color);
+    text(painter, (POOL_LAYOUT_WIDTH - (int) strlen(value) * 6 * scale + scale) / 2, y, value, scale, color);
 }
 
 static void panel(painter_t* painter, int x, int y, int width, int height)
 {
     box(painter, x + 4, y + 5, width, height, INK);
     box(painter, x, y, width, height, GOLD);
-    box(painter, x + 1, y + 1, width - 2, height - 2, BACKGROUND);
+    box(painter, x + 2, y + 2, width - 4, height - 4, BACKGROUND);
     line(painter, x + 16, y + 8, x + width - 17, y + 8, CUSHION);
 }
 
@@ -356,7 +459,10 @@ static void dialogs(painter_t* painter, const pool_game_t* game)
     } else if (game->rules.complete) {
         panel(painter, 132, 106, 376, 154);
         char winner[32];
-        (void) snprintf(winner, sizeof(winner), "PLAYER %u WINS", game->rules.winner + 1U);
+        string_builder_t winner_text = string_builder(winner, sizeof(winner));
+        append_text(&winner_text, "PLAYER ");
+        append_unsigned(&winner_text, game->rules.winner + 1U);
+        append_text(&winner_text, " WINS");
         const char* title = winner;
         if (game->computer) {
             title = game->rules.winner == 0U ? "YOU WIN!" : "COMPUTER WINS";
@@ -384,12 +490,10 @@ static int32_t interpolate(int32_t previous, int32_t current, uint32_t fraction)
     return previous + (int32_t) (((int64_t) current - previous) * fraction / 1000);
 }
 
-int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const pool_game_t* previous,
-                     uint32_t interpolation)
+static int render_pixels(tabos_color_t* pixels, const pool_game_t* game, const pool_game_t* previous,
+                         uint32_t interpolation)
 {
-    if (game == NULL || graphics == NULL || graphics->width != POOL_CANVAS_WIDTH ||
-        graphics->height != POOL_CANVAS_HEIGHT || interpolation >= 1000U) {
-        errno = EINVAL;
+    if (pixels == NULL || game == NULL || interpolation >= 1000U) {
         return -1;
     }
     pool_game_t frame;
@@ -403,7 +507,8 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
         }
         game = &frame;
     }
-    painter_t painter = {.graphics = graphics, .error = tabos_graphics_clear(graphics, BACKGROUND)};
+    painter_t painter = {.pixels = pixels};
+    canvas_box(&painter, 0, 0, POOL_CANVAS_WIDTH, POOL_CANVAS_HEIGHT, BACKGROUND);
     table(&painter);
     trays(&painter, game);
     feedback(&painter, game);
@@ -452,7 +557,13 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
     text(&painter, 106, 14, state, 1, GOLD);
     char label[40];
     const unsigned int degrees = game->angle * 3600U / POOL_ANGLE_COUNT;
-    (void) snprintf(label, sizeof(label), "AIM %u.%u   POWER %u", degrees / 10U, degrees % 10U, game->power);
+    string_builder_t label_text = string_builder(label, sizeof(label));
+    append_text(&label_text, "AIM ");
+    append_unsigned(&label_text, degrees / 10U);
+    append_text(&label_text, ".");
+    append_unsigned(&label_text, degrees % 10U);
+    append_text(&label_text, "   POWER ");
+    append_unsigned(&label_text, game->power);
     text(&painter, 254, 14, label, 1, WHITE);
     box(&painter, 400, 12, 102, 11, INK);
     box(&painter, 401, 13, (int) game->power, 9, GOLD);
@@ -486,29 +597,46 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
     char progress[100];
     char status_line[100];
     const pool_group_t group = game->rules.groups[game->rules.player];
+    string_builder_t progress_text = string_builder(progress, sizeof(progress));
     if (game->rules.break_shot) {
-        (void) snprintf(progress, sizeof(progress), "P%u BREAK - TABLE OPEN   P PAUSE   R NEW RACK   Q QUIT",
-                        game->rules.player + 1U);
+        append_text(&progress_text, "P");
+        append_unsigned(&progress_text, game->rules.player + 1U);
+        append_text(&progress_text, " BREAK - TABLE OPEN   P PAUSE   R NEW RACK   Q QUIT");
     } else if (group == POOL_OPEN) {
-        (void) snprintf(progress, sizeof(progress), "P%u TABLE OPEN   P PAUSE   R NEW RACK   Q QUIT",
-                        game->rules.player + 1U);
+        append_text(&progress_text, "P");
+        append_unsigned(&progress_text, game->rules.player + 1U);
+        append_text(&progress_text, " TABLE OPEN   P PAUSE   R NEW RACK   Q QUIT");
     } else {
         const char* target = pool_rules_remaining(group, game->potted) == 0U ? "ON 8" : pool_rules_group_name(group);
-        (void) snprintf(progress, sizeof(progress), "P%u %s  |  P1 %s %u LEFT  P2 %s %u LEFT  |  R NEW Q QUIT",
-                        game->rules.player + 1U, target, pool_rules_group_name(game->rules.groups[0]),
-                        pool_rules_remaining(game->rules.groups[0], game->potted),
-                        pool_rules_group_name(game->rules.groups[1]),
-                        pool_rules_remaining(game->rules.groups[1], game->potted));
+        append_text(&progress_text, "P");
+        append_unsigned(&progress_text, game->rules.player + 1U);
+        append_text(&progress_text, " ");
+        append_text(&progress_text, target);
+        append_text(&progress_text, "  |  P1 ");
+        append_text(&progress_text, pool_rules_group_name(game->rules.groups[0]));
+        append_text(&progress_text, " ");
+        append_unsigned(&progress_text, pool_rules_remaining(game->rules.groups[0], game->potted));
+        append_text(&progress_text, " LEFT  P2 ");
+        append_text(&progress_text, pool_rules_group_name(game->rules.groups[1]));
+        append_text(&progress_text, " ");
+        append_unsigned(&progress_text, pool_rules_remaining(game->rules.groups[1], game->potted));
+        append_text(&progress_text, " LEFT  |  R NEW Q QUIT");
     }
     const char* hint = progress;
     if (game->placement) {
-        (void) snprintf(status_line, sizeof(status_line), "P%u BALL IN HAND: %s | %s", game->rules.player + 1U,
-                        pool_rules_foul_name(game->rules.foul),
-                        pool_game_placement_valid(game) ? "GOLD VALID - ENTER" : "RED BLOCKED - MOVE");
+        string_builder_t status = string_builder(status_line, sizeof(status_line));
+        append_text(&status, "P");
+        append_unsigned(&status, game->rules.player + 1U);
+        append_text(&status, " BALL IN HAND: ");
+        append_text(&status, pool_rules_foul_name(game->rules.foul));
+        append_text(&status, " | ");
+        append_text(&status, pool_game_placement_valid(game) ? "GOLD VALID - ENTER" : "RED BLOCKED - MOVE");
         hint = status_line;
     } else if (game->rules.reracked) {
-        (void) snprintf(status_line, sizeof(status_line), "8 ON BREAK - RERACKED   P%u BREAKS AGAIN   SPACE OR K SHOOT",
-                        game->rules.player + 1U);
+        string_builder_t status = string_builder(status_line, sizeof(status_line));
+        append_text(&status, "8 ON BREAK - RERACKED   P");
+        append_unsigned(&status, game->rules.player + 1U);
+        append_text(&status, " BREAKS AGAIN   SPACE OR K SHOOT");
         hint = status_line;
     }
     if (game->paused) {
@@ -521,8 +649,12 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
         } else if (game->rules.foul != POOL_FAIR) {
             reason = pool_rules_foul_name(game->rules.foul);
         }
-        (void) snprintf(status_line, sizeof(status_line), "PLAYER %u WINS - %s   ENTER NEW RACK   Q QUIT",
-                        game->rules.winner + 1U, reason);
+        string_builder_t status = string_builder(status_line, sizeof(status_line));
+        append_text(&status, "PLAYER ");
+        append_unsigned(&status, game->rules.winner + 1U);
+        append_text(&status, " WINS - ");
+        append_text(&status, reason);
+        append_text(&status, "   ENTER NEW RACK   Q QUIT");
         hint = status_line;
     }
     if (game->restart_pending) {
@@ -541,6 +673,48 @@ int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const 
     text(&painter, 610, 302, game->muted ? "OFF" : "ON", 1, MUTED);
     dialogs(&painter, game);
     if (painter.error != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+void pool_render_prepare(pool_render_job_t* job, tabos_color_t* pixels, const pool_game_t* game,
+                         const pool_game_t* previous, uint32_t interpolation)
+{
+    if (job == NULL) {
+        return;
+    }
+    *job = (pool_render_job_t) {.pixels = pixels, .interpolation = interpolation, .has_previous = previous != NULL};
+    if (game != NULL) {
+        job->game = *game;
+    }
+    if (previous != NULL) {
+        job->previous = *previous;
+    }
+}
+
+void pool_render_execute(void* data)
+{
+    pool_render_job_t* job = data;
+    if (job != NULL) {
+        job->result = render_pixels(job->pixels, &job->game, job->has_previous ? &job->previous : NULL,
+                                    job->interpolation);
+    }
+}
+
+int pool_render_draw(tabos_graphics_t* graphics, const pool_game_t* game, const pool_game_t* previous,
+                     uint32_t interpolation)
+{
+    if (game == NULL || graphics == NULL || graphics->width != POOL_CANVAS_WIDTH ||
+        graphics->height != POOL_CANVAS_HEIGHT || interpolation >= 1000U) {
+        errno = EINVAL;
+        return -1;
+    }
+    pool_render_job_t job;
+    pool_render_prepare(&job, tabos_graphics_pixels(graphics), game, previous, interpolation);
+    pool_render_execute(&job);
+    if (job.result != 0) {
+        errno = EINVAL;
         return -1;
     }
     return 0;

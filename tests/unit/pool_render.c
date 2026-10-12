@@ -29,11 +29,17 @@ static int present(void)
     return present_result;
 }
 
+static int clear(uint32_t color)
+{
+    assert(color == 0U);
+    return 0;
+}
+
 static int blit(const tabos_graphics_blit_options_t* options)
 {
-    assert(options->bitmap_width == 640U && options->bitmap_height == 360U);
-    assert(options->destination.x == 0 && options->destination.y == 0);
-    assert(options->destination.width == 1280U && options->destination.height == 720U);
+    assert(options->bitmap_width == POOL_CANVAS_WIDTH && options->bitmap_height == POOL_CANVAS_HEIGHT);
+    assert(options->destination.x == 1 && options->destination.y == 0);
+    assert(options->destination.width == 1278U && options->destination.height == 720U);
     assert(options->pixels != NULL);
     return 0;
 }
@@ -42,6 +48,7 @@ static const tabos_elf_api_t api = {
     .abi_version      = TABOS_ELF_API_VERSION,
     .graphics_open    = open_graphics,
     .graphics_close   = close_graphics,
+    .graphics_clear   = clear,
     .graphics_present = present,
     .graphics_blit_ex = blit,
 };
@@ -49,7 +56,13 @@ const tabos_elf_api_t* tabos_runtime_api = &api;
 
 static tabos_color_t pixel(const tabos_graphics_t* graphics, int x, int y)
 {
-    assert(x >= 0 && x < POOL_CANVAS_WIDTH && y >= 0 && y < POOL_CANVAS_HEIGHT);
+    assert(x >= 0 && x < POOL_LAYOUT_WIDTH && y >= 0 && y < POOL_LAYOUT_HEIGHT);
+    return graphics->pixels[(size_t) (y * 2 / 3) * graphics->width + (size_t) (x * 2 / 3)];
+}
+
+static tabos_color_t canvas_pixel(const tabos_graphics_t* graphics, int x, int y)
+{
+    assert(x >= 0 && x < (int) graphics->width && y >= 0 && y < (int) graphics->height);
     return graphics->pixels[(size_t) y * graphics->width + (size_t) x];
 }
 
@@ -80,7 +93,7 @@ int main(void)
     pool_game_t game;
     pool_game_reset(&game);
     assert(tabos_graphics_open(&graphics) == 0);
-    assert(graphics.scale == 2U);
+    assert(graphics.scale == 3U);
     assert(pool_render(&graphics, &game) == 0 && presents == 1U);
     assert(pixel(&graphics, 100, 101) == TABOS_RGB565(23, 112, 88));
     assert(pixel(&graphics, 100, 44) == TABOS_RGB565(17, 78, 64));
@@ -97,9 +110,11 @@ int main(void)
     for (unsigned int i = 1U; i < POOL_BALL_COUNT; ++i) {
         const int x = POOL_TABLE_X + pool_initial_balls[i].x;
         const int y = POOL_TABLE_Y + pool_initial_balls[i].y;
+        const int canvas_x = (x * 2 + 1) / 3;
+        const int canvas_y = (y * 2 + 1) / 3;
         for (int row = 0; row < 5; ++row) {
             for (int column = 0; column < 7; ++column) {
-                numbers[i][row * 7 + column] = pixel(&graphics, x - 3 + column, y - 2 + row);
+                numbers[i][row * 7 + column] = canvas_pixel(&graphics, canvas_x - 3 + column, canvas_y - 2 + row);
             }
         }
         for (unsigned int j = 1U; j < i; ++j) {
@@ -116,11 +131,12 @@ int main(void)
         assert(pool_render(&graphics, &game) == 0);
         /* Cue and HUD changes never overwrite the identifying digits. */
         for (unsigned int j = 1U; j < POOL_BALL_COUNT; ++j) {
+            const int canvas_x = ((POOL_TABLE_X + pool_initial_balls[j].x) * 2 + 1) / 3;
+            const int canvas_y = ((POOL_TABLE_Y + pool_initial_balls[j].y) * 2 + 1) / 3;
             for (int row = 0; row < 5; ++row) {
                 for (int column = 0; column < 7; ++column) {
-                    assert(numbers[j][row * 7 + column] == pixel(&graphics,
-                                                                 POOL_TABLE_X + pool_initial_balls[j].x - 3 + column,
-                                                                 POOL_TABLE_Y + pool_initial_balls[j].y - 2 + row));
+                    assert(numbers[j][row * 7 + column] ==
+                           canvas_pixel(&graphics, canvas_x - 3 + column, canvas_y - 2 + row));
                 }
             }
         }
@@ -155,8 +171,10 @@ int main(void)
     assert(pixel(&graphics, POOL_TABLE_X + 132, POOL_TABLE_Y + 132) == TABOS_RGB565(219, 183, 105));
     game.placement_position = game.balls[3].position;
     assert(pool_render(&graphics, &game) == 0);
-    assert(pixel(&graphics, POOL_TABLE_X + game.placement_position.x / POOL_ONE,
-                 POOL_TABLE_Y + game.placement_position.y / POOL_ONE) == TABOS_RGB565(235, 65, 65));
+    const int placement_x = POOL_TABLE_X + game.placement_position.x / POOL_ONE;
+    const int placement_y = POOL_TABLE_Y + game.placement_position.y / POOL_ONE;
+    assert(canvas_pixel(&graphics, (placement_x * 2 + 1) / 3, (placement_y * 2 + 1) / 3) ==
+           TABOS_RGB565(235, 65, 65));
     pool_game_reset(&game);
     game.title    = true;
     game.computer = true;

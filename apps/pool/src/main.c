@@ -4,8 +4,11 @@
 #include <pool/ai.h>
 #include <pool/sound.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 #include <tabos/runtime_time.h>
+#include <tabos/compute.h>
+#include <tabos/filesystem.h>
 
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -25,6 +28,8 @@ static bool sound_enabled(const pool_game_t* game)
 {
     return !game->muted && !game->title && !game->help && !game->paused && !game->restart_pending;
 }
+
+enum { POOL_FRAME_COUNT = 4 };
 
 int main(int argc, char** argv)
 {
@@ -54,6 +59,28 @@ int main(int argc, char** argv)
         fprintf(stderr, "pool: graphics unavailable\n");
         return 1;
     }
+    tabos_color_t* frame_buffers[POOL_FRAME_COUNT] = {graphics.pixels};
+    const size_t frame_pixels                      = (size_t) graphics.width * graphics.height;
+    for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
+        frame_buffers[frame] = calloc(frame_pixels, sizeof(*frame_buffers[frame]));
+        if (frame_buffers[frame] == NULL) {
+            for (unsigned int allocated = 1U; allocated < frame; ++allocated) {
+                free(frame_buffers[allocated]);
+            }
+            (void) tabos_graphics_close(&graphics);
+            fprintf(stderr, "pool: frame buffers unavailable\n");
+            return 1;
+        }
+    }
+    pool_render_job_t* render_jobs = calloc(POOL_FRAME_COUNT, sizeof(*render_jobs));
+    if (render_jobs == NULL) {
+        for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
+            free(frame_buffers[frame]);
+        }
+        (void) tabos_graphics_close(&graphics);
+        fprintf(stderr, "pool: render jobs unavailable\n");
+        return 1;
+    }
     tabos_wait_item_t input = {.source = tabos_input_wait_source(), .events = TABOS_WAIT_READABLE};
     int status              = input.source == TABOS_WAIT_SOURCE_INVALID ? 1 : 0;
     pool_game_t game;
@@ -65,7 +92,8 @@ int main(int argc, char** argv)
     pool_ai_reset(&ai, UINT32_C(0x504f4f4c));
     pool_input_t controls = {0};
     bool dirty            = true;
-    bool frame_pending    = false;
+    unsigned int frame_index    = 0U;
+    unsigned int frames_pending = 0U;
     uint64_t previous     = tabos_monotonic_ms();
     pool_clock_t clock    = {0};
     while (!controls.quit && status == 0) {
@@ -167,17 +195,28 @@ int main(int argc, char** argv)
             if (profiling) {
                 wait_start = tabos_monotonic_ms();
             }
-            if (frame_pending && tabos_graphics_wait(&graphics) != 0) {
+            if (frames_pending == POOL_FRAME_COUNT && tabos_graphics_wait(&graphics) != 0) {
                 status = 1;
                 break;
             }
-            frame_pending                = false;
+            if (frames_pending == POOL_FRAME_COUNT) {
+                frames_pending = 0U;
+            }
             const uint64_t wait_duration = profiling ? tabos_monotonic_ms() - wait_start : 0U;
             uint64_t render_start        = 0U;
             if (profiling) {
                 render_start = tabos_monotonic_ms();
             }
-            if (pool_render_draw(&graphics, &game, motion, clock.accumulator) != 0) {
+            pool_render_job_t* render_job = &render_jobs[frame_index];
+            pool_render_prepare(render_job, graphics.pixels, &game, motion, clock.accumulator);
+            int render_status = tabos_compute_submit(pool_render_execute, render_job, sizeof(*render_job));
+            if (render_status == -TABOS_ENOTSUP) {
+                pool_render_execute(render_job);
+                render_status = 0;
+            } else if (render_status == 0) {
+                render_status = tabos_compute_wait();
+            }
+            if (render_status != 0 || render_job->result != 0) {
                 status = 1;
                 break;
             }
@@ -190,7 +229,9 @@ int main(int argc, char** argv)
                 status = 1;
                 break;
             }
-            frame_pending                  = true;
+            ++frames_pending;
+            frame_index     = (frame_index + 1U) % POOL_FRAME_COUNT;
+            graphics.pixels = frame_buffers[frame_index];
             const uint64_t submit_duration = profiling ? tabos_monotonic_ms() - submit_start : 0U;
             if (profiling && is_active) {
                 ++frames;
@@ -221,9 +262,17 @@ int main(int argc, char** argv)
     if (sound.error != 0) {
         fprintf(stderr, "pool: audio unavailable: %s\n", strerror(sound.error));
     }
-    if ((frame_pending && tabos_graphics_wait(&graphics) != 0) || tabos_graphics_close(&graphics) != 0) {
+    if (frames_pending != 0U && tabos_graphics_wait(&graphics) != 0) {
         status = 1;
     }
+    graphics.pixels = frame_buffers[0];
+    if (tabos_graphics_close(&graphics) != 0) {
+        status = 1;
+    }
+    for (unsigned int frame = 1U; frame < POOL_FRAME_COUNT; ++frame) {
+        free(frame_buffers[frame]);
+    }
+    free(render_jobs);
     if (status != 0) {
         fprintf(stderr, "pool: graphics or input service failed\n");
     }
