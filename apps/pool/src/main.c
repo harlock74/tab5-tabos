@@ -29,7 +29,7 @@ static bool sound_enabled(const pool_game_t* game)
     return !game->muted && !game->title && !game->help && !game->paused && !game->restart_pending;
 }
 
-enum { POOL_FRAME_COUNT = 4 };
+enum { POOL_FRAME_COUNT = 2 };
 
 int main(int argc, char** argv)
 {

@@ -89,11 +89,11 @@ controls. Its table geometry, rack and numbered ball artwork remain unchanged.
 
 ## Geometry checkpoint
 
-A 640×360 virtual layout is rasterized into a 426×240 RGB565 canvas. TabOS scales
-it 3× to a centered 1278×720 image. Table-local coordinates run from `(0,0)` to
-`(528,264)`, with positive Y down; rendering adds `(56,48)`. The ball radius is
-7 virtual pixels. HUD/instructions fit outside the rails and leave the
-upper-right region available for OS status overlays.
+A 640×360 RGB565 canvas fills the Tab5 landscape display at exact 2× scale.
+Table-local coordinates run from `(0,0)` to `(528,264)`, with positive Y down;
+rendering adds `(56,48)`. The ball radius is 7 logical pixels. HUD/instructions
+fit outside the rails and leave the upper-right region available for OS status
+overlays.
 
 `apps/pool/src/table.c` is the single source for six finite cushion faces,
 their tapered backs, endpoint jaw centers (radius 2), and six pocket centers,
@@ -112,8 +112,8 @@ with a solid and stripe at opposite rear corners. The small diagonal rack gaps
 are intentional at this stage; a tighter fractional rack requires explicit review before any future change. Labels 1–15 use compact 3×5 digits on light patches, and stripes have
 white caps and colored bands.
 
-The game rotates through four 204,480-byte logical canvases. Application metadata
-requests a 1 MiB heap and 16 KiB stack. Its pure renderer uses the public bounded
+The game rotates through two 460,800-byte logical canvases. Application metadata
+requests a 1.25 MiB heap and 16 KiB stack. Its pure renderer uses the public bounded
 compute worker on Tab5 and falls back to synchronous rendering where that optional
 service reports `ENOTSUP`. It uses a fixed
 60 Hz clock, bounds catch-up to 100 ms, and subtracts elapsed frame work before
@@ -461,10 +461,8 @@ fixed-tick fraction, keeping visible motion evenly paced when presentation runs
 below the 60 Hz simulation rate; physics, contacts, rules and shot duration still
 advance only through the existing fixed ticks.
 
-Pool draws its 640x360 virtual layout into a 426x240 logical canvas, which TabOS
-scales 3x to a centered 1278x720 output. This retains the table's physical size
-and readable ball detail while cutting logical-canvas work by more than half.
-Pool rotates through four canvases with borrowed submission so application
+Pool draws at 640x360, which TabOS scales exactly 2x to 1280x720 without
+fractional geometry or letterboxing. Pool rotates through two canvases with borrowed submission so application
 drawing can overlap the bounded display job, then fences the batch before
 reusing a canvas. Every submitted canvas remains unchanged until that fence,
 preserving the public API's source lifetime contract without a per-frame

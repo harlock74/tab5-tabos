@@ -29,17 +29,17 @@ typedef struct {
 
 static int scaled_start(int value)
 {
-    return value >= 0 ? value * 2 / 3 : -((-value * 2 + 2) / 3);
+    return value;
 }
 
 static int scaled_end(int value)
 {
-    return value >= 0 ? (value * 2 + 2) / 3 : -((-value * 2) / 3);
+    return value;
 }
 
 static int scaled_coordinate(int value)
 {
-    return value >= 0 ? (value * 2 + 1) / 3 : -((-value * 2 + 1) / 3);
+    return value;
 }
 
 static void canvas_box(painter_t* painter, int x, int y, int width, int height, tabos_color_t color);
@@ -417,7 +417,7 @@ static void panel(painter_t* painter, int x, int y, int width, int height)
 {
     box(painter, x + 4, y + 5, width, height, INK);
     box(painter, x, y, width, height, GOLD);
-    box(painter, x + 2, y + 2, width - 4, height - 4, BACKGROUND);
+    box(painter, x + 1, y + 1, width - 2, height - 2, BACKGROUND);
     line(painter, x + 16, y + 8, x + width - 17, y + 8, CUSHION);
 }
 
