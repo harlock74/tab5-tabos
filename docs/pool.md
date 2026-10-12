@@ -452,13 +452,14 @@ latency and moving-frame samples are observational, not fixed timing assertions.
 
 Launch `pool --profile` for aggregate device-side timing. After quitting, it
 reports active elapsed time, submitted frames, fixed simulation ticks, total and
-worst simulation/render/submit time, and discarded catch-up time. Profiling does
+worst simulation/display-wait/render/submit time, and discarded catch-up time. Profiling does
 not print during play. Ball positions are rendered with the clock's remaining
 fixed-tick fraction, keeping visible motion evenly paced when presentation runs
 below the 60 Hz simulation rate; physics, contacts, rules and shot duration still
 advance only through the existing fixed ticks.
 
-Pool uses the SDK's ordinary frame submission after drawing each interpolated
-frame. On the updated Tab5 backend this overlaps display work with the next wait
-and simulation cycle while retaining the SDK's copy semantics for the logical
-canvas. The full 640x360 canvas maps exactly to the 1280x720 display.
+Pool uses borrowed frame submission after drawing each interpolated frame. The
+canvas remains unchanged while TabOS consumes it; Pool handles input, simulation
+and its timed wait before fencing the previous frame immediately before the next
+draw. This avoids a per-frame canvas snapshot while preserving the API's source
+lifetime contract. The full 640x360 canvas maps exactly to the 1280x720 display.

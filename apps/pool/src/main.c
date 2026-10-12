@@ -41,8 +41,8 @@ int main(int argc, char** argv)
         }
     }
     uint64_t active_ms = 0U, frames = 0U, ticks_total = 0U;
-    uint64_t simulation_ms = 0U, render_ms = 0U, submit_ms = 0U;
-    uint64_t max_simulation_ms = 0U, max_render_ms = 0U, max_submit_ms = 0U;
+    uint64_t simulation_ms = 0U, wait_ms = 0U, render_ms = 0U, submit_ms = 0U;
+    uint64_t max_simulation_ms = 0U, max_wait_ms = 0U, max_render_ms = 0U, max_submit_ms = 0U;
     uint32_t tty = 0U;
     if (ioctl(STDIN_FILENO, TABOS_TTY_GET_MODE, &tty) != 0 ||
         ioctl(STDIN_FILENO, TABOS_TTY_SET_MODE, tty | (uint32_t) TABOS_TTY_MODE_RAW_INPUT) != 0) {
@@ -65,6 +65,7 @@ int main(int argc, char** argv)
     pool_ai_reset(&ai, UINT32_C(0x504f4f4c));
     pool_input_t controls = {0};
     bool dirty            = true;
+    bool frame_pending    = false;
     uint64_t previous     = tabos_monotonic_ms();
     pool_clock_t clock    = {0};
     while (!controls.quit && status == 0) {
@@ -162,7 +163,17 @@ int main(int argc, char** argv)
         }
         if (dirty) {
             const pool_game_t* motion = interpolate_motion ? &previous_motion : NULL;
-            uint64_t render_start     = 0U;
+            uint64_t wait_start       = 0U;
+            if (profiling) {
+                wait_start = tabos_monotonic_ms();
+            }
+            if (frame_pending && tabos_graphics_wait(&graphics) != 0) {
+                status = 1;
+                break;
+            }
+            frame_pending                = false;
+            const uint64_t wait_duration = profiling ? tabos_monotonic_ms() - wait_start : 0U;
+            uint64_t render_start        = 0U;
             if (profiling) {
                 render_start = tabos_monotonic_ms();
             }
@@ -175,15 +186,20 @@ int main(int argc, char** argv)
             if (profiling) {
                 submit_start = tabos_monotonic_ms();
             }
-            if (tabos_graphics_submit(&graphics) != 0) {
+            if (tabos_graphics_submit_borrowed(&graphics) != 0) {
                 status = 1;
                 break;
             }
+            frame_pending                  = true;
             const uint64_t submit_duration = profiling ? tabos_monotonic_ms() - submit_start : 0U;
             if (profiling && is_active) {
                 ++frames;
+                wait_ms    += wait_duration;
                 render_ms  += render_duration;
-                submit_ms += submit_duration;
+                submit_ms  += submit_duration;
+                if (wait_duration > max_wait_ms) {
+                    max_wait_ms = wait_duration;
+                }
                 if (render_duration > max_render_ms) {
                     max_render_ms = render_duration;
                 }
@@ -205,7 +221,7 @@ int main(int argc, char** argv)
     if (sound.error != 0) {
         fprintf(stderr, "pool: audio unavailable: %s\n", strerror(sound.error));
     }
-    if (tabos_graphics_close(&graphics) != 0) {
+    if ((frame_pending && tabos_graphics_wait(&graphics) != 0) || tabos_graphics_close(&graphics) != 0) {
         status = 1;
     }
     if (status != 0) {
@@ -215,11 +231,12 @@ int main(int argc, char** argv)
         printf("Pool profile (active play and animation):\n"
                "  elapsed: %" PRIu64 " ms; frames: %" PRIu64 "; ticks: %" PRIu64 "\n"
                "  simulation: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
+               "  wait: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
                "  render: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
                "  submit: total %" PRIu64 " ms; worst %" PRIu64 " ms\n"
                "  catch-up discarded: %" PRIu64 " ms\n",
-               active_ms, frames, ticks_total, simulation_ms, max_simulation_ms, render_ms, max_render_ms, submit_ms,
-               max_submit_ms, clock.discarded_ms);
+               active_ms, frames, ticks_total, simulation_ms, max_simulation_ms, wait_ms, max_wait_ms, render_ms,
+               max_render_ms, submit_ms, max_submit_ms, clock.discarded_ms);
     }
     return status;
 }
